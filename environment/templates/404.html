@@ -1,0 +1,30 @@
+{% extends 'environment/base.html' %}
+{% load static %}
+
+{% block title %}404 - Page Not Found{% endblock %}
+{% block page_title %}Page Not Found{% endblock %}
+
+{% block content %}
+
+<div class="table-box" style="text-align:center; padding: 60px 20px;">
+    <div style="font-size:72px; color:#2563eb; margin-bottom:15px;">
+        <i class="fa-solid fa-compass-drafting"></i> 404
+    </div>
+
+    <h2 style="margin-bottom:10px; color:#0f172a;">Requested Resource Not Found</h2>
+
+    <p style="color:#64748b; max-width:500px; margin:0 auto 25px auto;">
+        The page, filter, or protected area record you are looking for does not exist or has been relocated.
+    </p>
+
+    <div style="display:flex; justify-content:center; gap:12px;">
+        <a href="{% url 'home' %}" style="padding:10px 20px; background:#2563eb; color:white; border-radius:8px; text-decoration:none; font-weight:600;">
+            <i class="fa-solid fa-house"></i> Return to Dashboard
+        </a>
+        <a href="{% url 'map' %}" class="clear" style="padding:10px 20px;">
+            <i class="fa-solid fa-map"></i> Open World Map
+        </a>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,699 @@
+{% extends 'environment/base.html' %}
+{% load static %}
+
+{% block title %}AI Prediction{% endblock %}
+{% block page_title %}AI Environmental Prediction{% endblock %}
+
+{% block content %}
+
+<!-- ==========================
+     AI HERO CARD
+=========================== -->
+
+<div class="cards">
+
+    <div class="card gradient-blue">
+
+        <div class="card-top">
+
+            <div class="icon-circle">
+                <i class="fa-solid fa-robot"></i>
+            </div>
+
+            <span class="trend">
+                Machine Learning
+            </span>
+
+        </div>
+
+        <h4>AI Environmental Intelligence</h4>
+
+        <h2 style="font-size:32px;margin-top:10px;">
+            CO₂ Emission Predictor
+        </h2>
+
+        <p style="margin-top:12px;">
+            Predict future carbon emissions using Machine Learning
+            based on environmental indicators stored in the database.
+        </p>
+
+    </div>
+
+</div>
+
+<!-- ==========================
+        PREDICTION FORM
+=========================== -->
+
+<div class="table-box prediction-box">
+
+    <div class="section-header">
+
+        <div>
+
+            <h2>
+                <i class="fa-solid fa-brain"></i>
+                AI Prediction
+            </h2>
+
+            <p>
+                Choose a country and year to analyse its environmental data.
+            </p>
+
+        </div>
+
+    </div>
+
+    <form method="POST" id="predictionForm">
+
+        {% csrf_token %}
+
+        <div class="prediction-grid">
+
+            <div class="form-group">
+
+                <label>
+
+                    <i class="fa-solid fa-earth-asia"></i>
+
+                    Country
+
+                </label>
+
+                <select
+                    name="country"
+                    id="country"
+                    required>
+
+                    <option value="">
+                        Select Country
+                    </option>
+
+                    {% for country in countries %}
+
+                    <option value="{{ country }}">
+
+                        {{ country }}
+
+                    </option>
+
+                    {% endfor %}
+
+                </select>
+
+            </div>
+
+            <div class="form-group">
+
+                <label>
+
+                    <i class="fa-solid fa-calendar"></i>
+
+                    Year
+
+                </label>
+
+                <select
+                    name="year"
+                    id="year"
+                    required>
+
+                    <option value="">
+                        Select Year
+                    </option>
+
+                    {% for year in years %}
+
+                    <option value="{{ year }}">
+
+                        {{ year }}
+
+                    </option>
+
+                    {% endfor %}
+
+                </select>
+
+            </div>
+
+        </div>
+
+        <!-- ======================
+            ENVIRONMENT CARD
+        ======================= -->
+
+        <div
+            class="environment-card"
+            id="environmentCard"
+            style="display:none;">
+
+            <div class="environment-title">
+
+                <i class="fa-solid fa-leaf"></i>
+
+                Environmental Information
+
+            </div>
+
+            <div class="environment-grid">
+
+                <div class="info-card">
+
+                    <div class="info-icon blue">
+
+                        <i class="fa-solid fa-users"></i>
+
+                    </div>
+
+                    <div>
+
+                        <span>Population</span>
+
+                        <h3 id="population">
+                            --
+                        </h3>
+
+                    </div>
+
+                </div>
+
+                <div class="info-card">
+
+                    <div class="info-icon green">
+
+                        <i class="fa-solid fa-dollar-sign"></i>
+
+                    </div>
+
+                    <div>
+
+                        <span>GDP Per Capita</span>
+
+                        <h3 id="gdp">
+                            --
+                        </h3>
+
+                    </div>
+
+                </div>
+
+                <div class="info-card">
+
+                    <div class="info-icon dark">
+
+                        <i class="fa-solid fa-tree"></i>
+
+                    </div>
+
+                    <div>
+
+                        <span>Forest Area</span>
+
+                        <h3 id="forest">
+                            --
+                        </h3>
+
+                    </div>
+
+                </div>
+                                <div class="info-card">
+
+                    <div class="info-icon orange">
+
+                        <i class="fa-solid fa-bolt"></i>
+
+                    </div>
+
+                    <div>
+
+                        <span>Renewable Energy</span>
+
+                        <h3 id="renewable">
+                            --
+                        </h3>
+
+                    </div>
+
+                </div>
+
+                <div class="info-card">
+
+                    <div class="info-icon purple">
+
+                        <i class="fa-solid fa-smog"></i>
+
+                    </div>
+
+                    <div>
+
+                        <span>PM2.5</span>
+
+                        <h3 id="pm25">
+                            --
+                        </h3>
+
+                    </div>
+
+                </div>
+
+                <div class="info-card">
+
+                    <div class="info-icon red">
+
+                        <i class="fa-solid fa-temperature-three-quarters"></i>
+
+                    </div>
+
+                    <div>
+
+                        <span>Average Temperature</span>
+
+                        <h3 id="temperature">
+                            --
+                        </h3>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- ======================
+                LOADING
+        ======================= -->
+
+        <div
+            id="loadingBox"
+            class="loading-box"
+            style="display:none;">
+
+            <div class="loader"></div>
+
+            <h3>
+
+                AI is analysing environmental data...
+
+            </h3>
+
+            <p>
+
+                Running Machine Learning prediction...
+
+            </p>
+
+        </div>
+
+        <div class="predict-btn-wrapper">
+
+            <button
+                type="submit"
+                class="predict-btn">
+
+                <i class="fa-solid fa-brain"></i>
+
+                Predict CO₂ Emissions
+
+            </button>
+
+        </div>
+
+    </form>
+
+</div>
+
+<!-- ==========================
+      PREDICTION RESULT
+=========================== -->
+
+{% if prediction %}
+
+<div class="cards prediction-result-section">
+
+    <div class="card gradient-green prediction-result-card">
+
+        <div class="card-top">
+
+            <div class="icon-circle">
+
+                <i class="fa-solid fa-chart-line"></i>
+
+            </div>
+
+            <span class="trend">
+
+                Prediction Complete
+
+            </span>
+
+        </div>
+
+        <h4>
+
+            Estimated CO₂ Emissions
+
+        </h4>
+
+        <div class="prediction-value">
+
+            {{ prediction }}
+
+        </div>
+
+        <p class="prediction-unit">
+
+            Million Metric Tons
+
+        </p>
+
+        {% if prediction < 1000 %}
+
+        <div class="risk-badge low">
+
+            🟢 Low Emission Risk
+
+        </div>
+
+        {% elif prediction < 5000 %}
+
+        <div class="risk-badge medium">
+
+            🟡 Moderate Emission Risk
+
+        </div>
+
+        {% else %}
+
+        <div class="risk-badge high">
+
+            🔴 High Emission Risk
+
+        </div>
+
+        {% endif %}
+                <!-- ==========================
+                AI INSIGHTS
+        =========================== -->
+
+        <div class="ai-summary">
+
+            <h3>
+
+                <i class="fa-solid fa-lightbulb"></i>
+
+                AI Environmental Insights
+
+            </h3>
+
+            <div class="summary-grid">
+
+                <div class="summary-card">
+
+                    <i class="fa-solid fa-globe"></i>
+
+                    <h4>Prediction</h4>
+
+                    <p>
+                        The trained Machine Learning model estimates the
+                        expected CO₂ emissions using environmental indicators.
+                    </p>
+
+                </div>
+
+                <div class="summary-card">
+
+                    <i class="fa-solid fa-seedling"></i>
+
+                    <h4>Recommendation</h4>
+
+                    {% if prediction < 1000 %}
+
+                    <p>
+
+                        Current environmental indicators suggest relatively
+                        sustainable conditions. Continue maintaining renewable
+                        energy initiatives and forest conservation.
+
+                    </p>
+
+                    {% elif prediction < 5000 %}
+
+                    <p>
+
+                        CO₂ emissions are moderate. Increasing renewable
+                        energy usage and reducing PM2.5 levels can improve
+                        environmental sustainability.
+
+                    </p>
+
+                    {% else %}
+
+                    <p>
+
+                        High predicted emissions detected. Immediate focus
+                        should be given to clean energy adoption,
+                        afforestation and pollution reduction.
+
+                    </p>
+
+                    {% endif %}
+
+                </div>
+
+                <div class="summary-card">
+
+    <i class="fa-solid fa-chart-column"></i>
+
+    <h4>AI Confidence</h4>
+
+    <div class="confidence-score">
+
+        {{ confidence }}%
+
+    </div>
+
+    <div class="confidence-bar">
+
+        <div
+            class="confidence-fill"
+            style="width:{{ confidence }}%;">
+
+        </div>
+
+    </div>
+
+    <div class="confidence-text">
+
+        {% if confidence >= 95 %}
+
+            Excellent Model Confidence
+
+        {% elif confidence >= 90 %}
+
+            Very High Confidence
+
+        {% elif confidence >= 80 %}
+
+            Good Confidence
+
+        {% else %}
+
+            Moderate Confidence
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endif %}
+
+<!-- ==========================
+        PREDICTION HISTORY
+=========================== -->
+
+<div class="table-box history-box">
+    <div class="history-toolbar">
+
+    <input
+        type="text"
+        id="historySearch"
+        placeholder="🔍 Search Country...">
+
+    <select id="historyFilter">
+
+        <option value="all">All Status</option>
+        <option value="low">Low</option>
+        <option value="moderate">Moderate</option>
+        <option value="high">High</option>
+
+    </select>
+
+    <button
+        type="button"
+        id="exportCSV"
+        class="predict-btn">
+
+        <i class="fa-solid fa-download"></i>
+
+        Export CSV
+
+    </button>
+
+</div>
+
+    <div class="section-header">
+
+        <div>
+
+            <h2>
+
+                <i class="fa-solid fa-clock-rotate-left"></i>
+
+                Recent Predictions
+
+            </h2>
+
+            <p>
+
+                Last 10 Machine Learning predictions stored in the database.
+
+            </p>
+
+        </div>
+
+    </div>
+
+    <table>
+
+        <thead>
+
+            <tr>
+
+                <th>Country</th>
+
+                <th>Year</th>
+
+                <th>Prediction</th>
+
+                <th>Status</th>
+
+                <th>Date</th>
+
+            </tr>
+
+        </thead>
+
+        <tbody>
+
+            {% for item in history %}
+
+            <tr>
+
+                <td>
+
+                    {{ item.country }}
+
+                </td>
+
+                <td>
+
+                    {{ item.year }}
+
+                </td>
+
+                <td>
+
+                    <strong>
+
+                        {{ item.prediction }} MT
+
+                    </strong>
+
+                </td>
+
+                <td>
+
+                    {% if item.prediction < 1000 %}
+
+                    <span class="risk-pill low status-cell">
+
+                        Low
+
+                    </span>
+
+                    {% elif item.prediction < 5000 %}
+
+                    <span class="risk-pill medium status-cell">
+
+                        Moderate
+
+                    </span>
+
+                    {% else %}
+
+                    <span class="risk-pill high status-cell">
+
+                        High
+
+                    </span>
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+
+                    {{ item.created_at|date:"d M Y H:i" }}
+
+                </td>
+
+            </tr>
+
+            {% empty %}
+
+            <tr>
+
+                <td colspan="5" class="empty-history">
+
+                    <i class="fa-solid fa-circle-info"></i>
+
+                    No prediction history available.
+
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+        </tbody>
+
+    </table>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script src="{% static 'environment/js/prediction.js' %}"></script>
+
+{{ trend_labels|json_script:"trend-data-labels" }}
+{{ trend_values|json_script:"trend-data-values" }}
+
+{{ country_labels|json_script:"country-data-labels" }}
+{{ country_values|json_script:"country-data-values" }}
+
+{{ risk_labels|json_script:"risk-data-labels" }}
+{{ risk_values|json_script:"risk-data-values" }}
+
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends 'environment/base.html' %}
+{% load static %}
+
+{% block title %}500 - Server Error{% endblock %}
+{% block page_title %}Internal Server Error{% endblock %}
+
+{% block content %}
+
+<div class="table-box" style="text-align:center; padding: 60px 20px;">
+    <div style="font-size:72px; color:#ef4444; margin-bottom:15px;">
+        <i class="fa-solid fa-triangle-exclamation"></i> 500
+    </div>
+
+    <h2 style="margin-bottom:10px; color:#0f172a;">An Unexpected Error Occurred</h2>
+
+    <p style="color:#64748b; max-width:500px; margin:0 auto 25px auto;">
+        The system encountered an error processing your query. Please check your filter parameters and try again.
+    </p>
+
+    <div style="display:flex; justify-content:center; gap:12px;">
+        <a href="{% url 'home' %}" style="padding:10px 20px; background:#2563eb; color:white; border-radius:8px; text-decoration:none; font-weight:600;">
+            <i class="fa-solid fa-house"></i> Return to Dashboard
+        </a>
+        <a href="javascript:history.back()" class="clear" style="padding:10px 20px;">
+            <i class="fa-solid fa-arrow-left"></i> Go Back
+        </a>
+    </div>
+</div>
+
+{% endblock %}

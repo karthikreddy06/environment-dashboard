@@ -1,0 +1,116 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>{% block title %}Marine Dashboard{% endblock %}</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+
+<link rel="stylesheet" href="{% static 'environment/css/style.css' %}">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- Sidebar -->
+
+    <aside class="sidebar">
+
+        <div class="logo">
+            <i class="fa-solid fa-water"></i>
+            <span>Marine Dashboard</span>
+        </div>
+
+        <nav class="menu">
+
+            <a href="{% url 'home' %}">
+                <i class="fa-solid fa-house"></i>
+                Dashboard
+            </a>
+
+            <a href="{% url 'analytics' %}">
+                <i class="fa-solid fa-chart-line"></i>
+                Analytics
+            </a>
+
+            <a href="{% url 'countries' %}">
+                <i class="fa-solid fa-earth-asia"></i>
+                Countries
+            </a>
+
+            <a href="{% url 'map' %}">
+                <i class="fa-solid fa-map-location-dot"></i>
+                World Map
+            </a>
+
+            <a href="{% url 'reports' %}">
+                <i class="fa-solid fa-file-arrow-down"></i>
+                Reports
+            </a>
+
+            <hr style="margin:20px 0;opacity:.2;">
+
+            <a href="{% url 'ai_prediction' %}">
+
+                <i class="fa-solid fa-robot"></i>
+
+                AI Prediction
+
+            </a>
+
+        </nav>
+
+    </aside>
+
+    <!-- Main -->
+
+    <main class="content">
+
+        <header class="topbar">
+
+            <div>
+
+                <h2>{% block page_title %}Dashboard{% endblock %}</h2>
+
+                <p>
+                    AI Powered Environmental Intelligence Dashboard
+                </p>
+
+            </div>
+
+            <div class="user-box">
+
+                <i class="fa-solid fa-user"></i>
+
+                Administrator
+
+            </div>
+
+        </header>
+
+        {% block content %}
+
+        {% endblock %}
+
+    </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% block scripts %}
+
+{% endblock %}
+
+</body>
+</html>

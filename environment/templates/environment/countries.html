@@ -1,0 +1,441 @@
+{% extends 'environment/base.html' %}
+{% load static %}
+
+{% block title %}Country Analytics - {{ active_country }}{% endblock %}
+{% block page_title %}Country Analytics{% endblock %}
+
+{% block content %}
+
+<!-- ================= HEADER ================= -->
+
+<div class="table-box" style="margin-bottom:25px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            <h2 style="margin-bottom:6px;">🌍 {{ active_country }} - WDPA Analytics</h2>
+            <p style="color:#64748b;">
+                Detailed marine protected area analytics, designations, governance, and area metrics powered by the official WDPA dataset.
+            </p>
+        </div>
+        <div>
+            <span class="badge" style="font-size:15px; padding:8px 16px; background:#dbeafe; color:#1d4ed8;">
+                {{ total_records }} Protected Areas
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- ================= SEARCH & COUNTRY SELECT ================= -->
+
+<div class="table-box" style="margin-bottom:25px;">
+    <form method="GET" class="filters" style="grid-template-columns: 2fr 2fr 1fr auto auto;">
+
+        <select name="country" onchange="this.form.submit()">
+            <option value="">🌐 Select Country / Territory...</option>
+            {% for c in all_countries %}
+            <option value="{{ c.country }}" {% if selected_country == c.country or search == c.country or search == c.country_code %}selected{% endif %}>
+                {{ c.country }} ({{ c.country_code }})
+            </option>
+            {% endfor %}
+        </select>
+
+        <input
+            type="text"
+            name="search"
+            placeholder="🔍 Search Country Name or ISO3 Code..."
+            value="{{ search }}"
+        >
+
+        <select name="sort" onchange="this.form.submit()">
+            <option value="-area" {% if sort_by == '-area' %}selected{% endif %}>Sort: Area (High to Low)</option>
+            <option value="area" {% if sort_by == 'area' %}selected{% endif %}>Sort: Area (Low to High)</option>
+            <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Sort: Name (A to Z)</option>
+            <option value="-name" {% if sort_by == '-name' %}selected{% endif %}>Sort: Name (Z to A)</option>
+            <option value="-year" {% if sort_by == '-year' %}selected{% endif %}>Sort: Year (Newest)</option>
+            <option value="year" {% if sort_by == 'year' %}selected{% endif %}>Sort: Year (Oldest)</option>
+        </select>
+
+        <button type="submit">
+            <i class="fa-solid fa-magnifying-glass"></i> Filter
+        </button>
+
+        <a href="{% url 'countries' %}" class="clear">
+            Clear
+        </a>
+
+    </form>
+</div>
+
+<!-- ================= KPI CARDS (STEP 3) ================= -->
+
+<div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+
+    <div class="card gradient-blue">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-shield-halved"></i></div>
+            <span class="trend">Total</span>
+        </div>
+        <h4>Total Protected Areas</h4>
+        <h2 class="counter">{{ total_records }}</h2>
+        <p>Marine Protected Areas</p>
+    </div>
+
+    <div class="card gradient-green">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-water"></i></div>
+            <span class="trend">Realms</span>
+        </div>
+        <h4>Marine Realms</h4>
+        <h2 class="counter">{{ total_realms }}</h2>
+        <p>Geographic Realms</p>
+    </div>
+
+    <div class="card gradient-purple">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-award"></i></div>
+            <span class="trend">Types</span>
+        </div>
+        <h4>Designation Types</h4>
+        <h2 class="counter">{{ unique_designations }}</h2>
+        <p>Official Designations</p>
+    </div>
+
+    <div class="card gradient-orange">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-layer-group"></i></div>
+            <span class="trend">IUCN</span>
+        </div>
+        <h4>IUCN Categories</h4>
+        <h2 class="counter">{{ unique_iucn }}</h2>
+        <p>Conservation Classes</p>
+    </div>
+
+    <div class="card gradient-blue" style="background: linear-gradient(135deg, #0284c7, #06b6d4);">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-building-user"></i></div>
+            <span class="trend">Gov</span>
+        </div>
+        <h4>Governance Types</h4>
+        <h2 class="counter">{{ unique_governance }}</h2>
+        <p>Management Types</p>
+    </div>
+
+    <div class="card gradient-green" style="background: linear-gradient(135deg, #0d9488, #14b8a6);">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-chart-area"></i></div>
+            <span class="trend">Average</span>
+        </div>
+        <h4>Average GIS Area (km²)</h4>
+        <h2 class="counter">{{ avg_gis_area }}</h2>
+        <p>Mean Protected Area Size</p>
+    </div>
+
+    <div class="card gradient-purple" style="background: linear-gradient(135deg, #6366f1, #4f46e5);">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-expand"></i></div>
+            <span class="trend">Largest</span>
+        </div>
+        <h4>Largest Area (km²)</h4>
+        <h2 class="counter">{{ largest_area }}</h2>
+        <p>Maximum Single Area</p>
+    </div>
+
+    <div class="card gradient-orange" style="background: linear-gradient(135deg, #d97706, #f59e0b);">
+        <div class="card-top">
+            <div class="icon-circle"><i class="fa-solid fa-calendar-check"></i></div>
+            <span class="trend">Latest</span>
+        </div>
+        <h4>Latest Status Year</h4>
+        <h2 class="counter">{{ latest_status_year }}</h2>
+        <p>Most Recent Update</p>
+    </div>
+
+</div>
+
+<!-- ================= CHARTS GRID (STEP 4) ================= -->
+
+<div class="charts" style="grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap:20px; margin-bottom:25px;">
+
+    <div class="chart-box">
+        <h3>Protected Areas by Designation</h3>
+        <canvas id="desigChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas by IUCN Category</h3>
+        <canvas id="iucnChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas by Governance Type</h3>
+        <canvas id="govChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas by Status</h3>
+        <canvas id="statusChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas Added Per Year</h3>
+        <canvas id="yearChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Average GIS Area by Designation (km²)</h3>
+        <canvas id="avgAreaDesigChart"></canvas>
+    </div>
+
+</div>
+
+<!-- ================= PROTECTED AREAS TABLE (STEP 5) ================= -->
+
+<div class="table-box">
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h3>Detailed Marine Protected Areas Table</h3>
+        <span style="color:#64748b; font-size:14px;">
+            Showing Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ total_records }} Total)
+        </span>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table>
+
+            <thead>
+
+                <tr>
+                    <th>Protected Area Name</th>
+                    <th>Designation</th>
+                    <th>Designation Type</th>
+                    <th>IUCN Category</th>
+                    <th>Realm</th>
+                    <th>GIS Area (km²)</th>
+                    <th>Reported Area</th>
+                    <th>Status</th>
+                    <th>Status Year</th>
+                    <th>Governance Type</th>
+                    <th>Management Authority</th>
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {% for item in page_obj %}
+
+                <tr>
+
+                    <td><strong>{{ item.protected_area_name|default:"Unnamed Protected Area" }}</strong></td>
+
+                    <td>{{ item.designation|default:"Not Reported" }}</td>
+
+                    <td>{{ item.designation_type|default:"National" }}</td>
+
+                    <td>
+                        <span class="badge" style="background:#e0e7ff; color:#3730a3;">
+                            {{ item.iucn_category|default:"Not Reported" }}
+                        </span>
+                    </td>
+
+                    <td>{{ item.realm|default:"Marine" }}</td>
+
+                    <td><strong>{{ item.gis_area|default:"N/A" }}</strong></td>
+
+                    <td>{{ item.reported_area|default:"N/A" }}</td>
+
+                    <td>
+                        <span class="badge" style="background:#dcfce7; color:#15803d;">
+                            {{ item.status|default:"Designated" }}
+                        </span>
+                    </td>
+
+                    <td>{{ item.status_year|default:"N/A" }}</td>
+
+                    <td>{{ item.governance_type|default:"Not Reported" }}</td>
+
+                    <td>{{ item.management_authority|default:"Not Reported" }}</td>
+
+                </tr>
+
+                {% empty %}
+
+                <tr>
+                    <td colspan="11" style="text-align:center; padding:30px;">
+                        No marine protected areas found for <strong>{{ active_country }}</strong>.
+                    </td>
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+    </div>
+
+    <!-- Pagination Controls -->
+    {% if page_obj.has_other_pages %}
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
+
+        <div>
+            {% if page_obj.has_previous %}
+            <a href="?country={{ selected_country }}&search={{ search }}&sort={{ sort_by }}&page={{ page_obj.previous_page_number }}" class="clear" style="padding:8px 16px;">
+                <i class="fa-solid fa-chevron-left"></i> Previous
+            </a>
+            {% endif %}
+        </div>
+
+        <span style="font-weight:600; color:#475569;">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </span>
+
+        <div>
+            {% if page_obj.has_next %}
+            <a href="?country={{ selected_country }}&search={{ search }}&sort={{ sort_by }}&page={{ page_obj.next_page_number }}" class="clear" style="padding:8px 16px;">
+                Next <i class="fa-solid fa-chevron-right"></i>
+            </a>
+            {% endif %}
+        </div>
+
+    </div>
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+const desigLabels = {{ desig_labels|safe }};
+const desigValues = {{ desig_values|safe }};
+
+new Chart(document.getElementById("desigChart"), {
+    type: 'bar',
+    data: {
+        labels: desigLabels,
+        datasets: [{
+            label: 'Protected Areas',
+            data: desigValues,
+            backgroundColor: '#2563eb',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+const iucnLabels = {{ iucn_labels|safe }};
+const iucnValues = {{ iucn_values|safe }};
+
+new Chart(document.getElementById("iucnChart"), {
+    type: 'doughnut',
+    data: {
+        labels: iucnLabels,
+        datasets: [{
+            data: iucnValues,
+            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6']
+        }]
+    },
+    options: { responsive: true }
+});
+
+const govLabels = {{ gov_labels|safe }};
+const govValues = {{ gov_values|safe }};
+
+new Chart(document.getElementById("govChart"), {
+    type: 'bar',
+    data: {
+        labels: govLabels,
+        datasets: [{
+            label: 'Governance',
+            data: govValues,
+            backgroundColor: '#8b5cf6',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+const statusLabels = {{ status_labels|safe }};
+const statusValues = {{ status_values|safe }};
+
+new Chart(document.getElementById("statusChart"), {
+    type: 'pie',
+    data: {
+        labels: statusLabels,
+        datasets: [{
+            data: statusValues,
+            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444']
+        }]
+    },
+    options: { responsive: true }
+});
+
+const yearLabels = {{ year_labels|safe }};
+const yearValues = {{ year_values|safe }};
+
+new Chart(document.getElementById("yearChart"), {
+    type: 'bar',
+    data: {
+        labels: yearLabels,
+        datasets: [{
+            label: 'Protected Areas Added',
+            data: yearValues,
+            backgroundColor: '#059669',
+            borderRadius: 6
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+const avgAreaDesigLabels = {{ avg_area_desig_labels|safe }};
+const avgAreaDesigValues = {{ avg_area_desig_values|safe }};
+
+new Chart(document.getElementById("avgAreaDesigChart"), {
+    type: 'bar',
+    data: {
+        labels: avgAreaDesigLabels,
+        datasets: [{
+            label: 'Avg GIS Area (km²)',
+            data: avgAreaDesigValues,
+            backgroundColor: '#0284c7',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+document.querySelectorAll(".counter").forEach(counter => {
+    const text = counter.innerText.replace(/,/g, "");
+    const target = parseFloat(text);
+    if (isNaN(target)) return;
+
+    let count = 0;
+    const isFloat = text.includes(".");
+    const speed = Math.max(0.1, target / 60);
+
+    function update() {
+        if (count < target) {
+            count += speed;
+            if (count > target) count = target;
+            counter.innerText = isFloat ? count.toFixed(2) : Math.floor(count).toLocaleString();
+            requestAnimationFrame(update);
+        }
+    }
+    update();
+});
+</script>
+
+{% endblock %}

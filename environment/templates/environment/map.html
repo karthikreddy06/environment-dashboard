@@ -1,0 +1,293 @@
+{% extends 'environment/base.html' %}
+{% load static %}
+
+{% block title %}World Map{% endblock %}
+{% block page_title %}World Map{% endblock %}
+
+{% block content %}
+
+<!-- ================= HEADER ================= -->
+
+<div class="table-box" style="margin-bottom:25px;">
+    <h2>🌍 Marine Protected Areas World Map</h2>
+    <p style="margin-top:8px;color:#64748b;">
+        Explore over 300,000 official Marine Protected Areas worldwide using high-performance marker clustering, custom popups, and real-time filtering.
+    </p>
+</div>
+
+<!-- ================= LIVE STATISTICS CARDS (STEP 6) ================= -->
+
+<div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+
+    <div class="card gradient-blue">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-location-dot"></i>
+            </div>
+            <span class="trend">Live Map</span>
+        </div>
+        <h4>Visible Protected Areas</h4>
+        <h2 id="statVisibleCount">0</h2>
+        <p>Markers on Screen</p>
+    </div>
+
+    <div class="card gradient-green">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-earth-americas"></i>
+            </div>
+            <span class="trend">Selection</span>
+        </div>
+        <h4>Selected Country</h4>
+        <h2 id="statSelectedCountry" style="font-size:24px; line-height:36px;">All Countries</h2>
+        <p>Active Country Filter</p>
+    </div>
+
+    <div class="card gradient-purple">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-filter"></i>
+            </div>
+            <span class="trend">Query</span>
+        </div>
+        <h4>Filtered Results</h4>
+        <h2 id="statFilteredCount">{{ total_records }}</h2>
+        <p>Matching WDPA Records</p>
+    </div>
+
+    <div class="card gradient-orange">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-magnifying-glass-location"></i>
+            </div>
+            <span class="trend">Leaflet</span>
+        </div>
+        <h4>Current Zoom Level</h4>
+        <h2 id="statZoomLevel">2</h2>
+        <p>Map Zoom Scale</p>
+    </div>
+
+</div>
+
+<!-- ================= INTERACTIVE MULTI-FIELD FILTERS (STEP 5) ================= -->
+
+<div class="table-box" style="margin-bottom:20px;">
+    <h3 style="margin-bottom:15px;"><i class="fa-solid fa-sliders"></i> Filter WDPA Map Dataset</h3>
+    <form id="mapFilterForm" class="filters" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+
+        <select id="filterCountry" onchange="fetchMapData()">
+            <option value="">🌐 All Countries</option>
+            {% for c in filter_countries %}
+            <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+        </select>
+
+        <select id="filterRealm" onchange="fetchMapData()">
+            <option value="">🌊 All Realms</option>
+            {% for r in filter_realms %}
+            <option value="{{ r }}">{{ r }}</option>
+            {% endfor %}
+        </select>
+
+        <select id="filterDesignation" onchange="fetchMapData()">
+            <option value="">🏅 All Designations</option>
+            {% for d in filter_designations %}
+            <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+        </select>
+
+        <select id="filterIUCN" onchange="fetchMapData()">
+            <option value="">🏷️ All IUCN Categories</option>
+            {% for i in filter_iucn %}
+            <option value="{{ i }}">{{ i }}</option>
+            {% endfor %}
+        </select>
+
+        <select id="filterStatus" onchange="fetchMapData()">
+            <option value="">📋 All Statuses</option>
+            {% for s in filter_statuses %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+        </select>
+
+        <select id="filterYear" onchange="fetchMapData()">
+            <option value="">📅 All Status Years</option>
+            {% for y in filter_years %}
+            <option value="{{ y }}">{{ y }}</option>
+            {% endfor %}
+        </select>
+
+        <select id="filterGovernance" onchange="fetchMapData()">
+            <option value="">🏛️ All Governance Types</option>
+            {% for g in filter_governance %}
+            <option value="{{ g }}">{{ g }}</option>
+            {% endfor %}
+        </select>
+
+        <input type="text" id="searchMap" placeholder="🔍 Search Name/Authority..." onkeyup="if(event.key==='Enter') fetchMapData();">
+
+        <button type="button" onclick="fetchMapData()" style="background:#2563eb; color:white; border:none; border-radius:10px; padding:12px; cursor:pointer;">
+            <i class="fa-solid fa-magnifying-glass"></i> Filter
+        </button>
+
+        <button type="button" onclick="resetMapFilters()" style="background:#64748b; color:white; border:none; border-radius:10px; padding:12px; cursor:pointer;">
+            Reset
+        </button>
+    </form>
+</div>
+
+<!-- ================= MAP VIEW TOGGLES & CONTAINER ================= -->
+
+<div class="map-controls">
+    <button class="map-btn marker-btn" onclick="showMarkers()">
+        <i class="fa-solid fa-location-dot"></i> Marker View
+    </button>
+    <button class="map-btn heat-btn" onclick="showHeatmap()">
+        <i class="fa-solid fa-fire"></i> Heatmap View
+    </button>
+</div>
+
+<div id="map"></div>
+
+<!-- Leaflet Styles & Scripts -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+<script>
+var map = L.map('map').setView([20, 0], 2);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap | WDPA Marine Protection Data'
+}).addTo(map);
+
+var clusterGroup = L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 50
+});
+
+var heatLayer = L.heatLayer([], { radius: 25, blur: 15, maxZoom: 7 });
+var currentMode = 'marker';
+
+map.on('zoomend', function() {
+    document.getElementById('statZoomLevel').innerText = map.getZoom();
+});
+
+function createPopupContent(item) {
+    return `
+        <div style="min-width:280px; max-width:320px; font-family:'Poppins',sans-serif; font-size:13px; color:#1e293b;">
+            <h4 style="margin:0 0 6px 0; color:#2563eb; font-size:15px; font-weight:700;">
+                🌊 ${item.protected_area_name || 'Unnamed Protected Area'}
+            </h4>
+            <div style="background:#f1f5f9; padding:4px 8px; border-radius:6px; font-weight:600; margin-bottom:8px;">
+                🌍 ${item.country || 'Global'} (${item.country_code || 'N/A'})
+            </div>
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Designation:</b></td><td>${item.designation || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Desig. Type:</b></td><td>${item.designation_type || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>IUCN Category:</b></td><td>${item.iucn_category || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Marine Realm:</b></td><td>${item.realm || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>GIS Area (km²):</b></td><td>${item.gis_area || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Reported Area:</b></td><td>${item.reported_area || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Status:</b></td><td><span style="color:#059669; font-weight:600;">${item.status || 'N/A'}</span></td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Status Year:</b></td><td>${item.status_year || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Governance:</b></td><td>${item.governance_type || 'N/A'}</td></tr>
+                <tr><td style="padding:2px 0; color:#64748b;"><b>Authority:</b></td><td>${item.management_authority || 'N/A'}</td></tr>
+            </table>
+        </div>
+    `;
+}
+
+function fetchMapData() {
+    var countryVal = document.getElementById('filterCountry').value;
+    var realmVal = document.getElementById('filterRealm').value;
+    var desigVal = document.getElementById('filterDesignation').value;
+    var iucnVal = document.getElementById('filterIUCN').value;
+    var statusVal = document.getElementById('filterStatus').value;
+    var yearVal = document.getElementById('filterYear').value;
+    var govVal = document.getElementById('filterGovernance').value;
+    var searchVal = document.getElementById('searchMap').value;
+
+    document.getElementById('statSelectedCountry').innerText = countryVal ? countryVal : 'All Countries';
+
+    var params = new URLSearchParams({
+        country: countryVal,
+        realm: realmVal,
+        designation: desigVal,
+        iucn: iucnVal,
+        status: statusVal,
+        year: yearVal,
+        governance: govVal,
+        search: searchVal
+    });
+
+    fetch('/map/data/?' + params.toString())
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                renderMapMarkers(data.markers, data.filtered_count);
+            }
+        })
+        .catch(err => console.error("Map Data Fetch Error:", err));
+}
+
+function renderMapMarkers(markersData, filteredTotal) {
+    clusterGroup.clearLayers();
+    var heatPoints = [];
+    var bounds = [];
+
+    markersData.forEach(function(item) {
+        if (item.lat && item.lng) {
+            var marker = L.marker([item.lat, item.lng]);
+            marker.bindPopup(createPopupContent(item));
+            clusterGroup.addLayer(marker);
+            heatPoints.push([item.lat, item.lng, 0.8]);
+            bounds.push([item.lat, item.lng]);
+        }
+    });
+
+    document.getElementById('statVisibleCount').innerText = markersData.length.toLocaleString();
+    document.getElementById('statFilteredCount').innerText = filteredTotal.toLocaleString();
+
+    if (currentMode === 'marker') {
+        if (!map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
+        if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+    } else {
+        if (map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
+        heatLayer.setLatLngs(heatPoints);
+        if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
+    }
+
+    if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 8 });
+    }
+}
+
+function showMarkers() {
+    currentMode = 'marker';
+    if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+    if (!map.hasLayer(clusterGroup)) map.addLayer(clusterGroup);
+}
+
+function showHeatmap() {
+    currentMode = 'heat';
+    if (map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup);
+    if (!map.hasLayer(heatLayer)) map.addLayer(heatLayer);
+}
+
+function resetMapFilters() {
+    document.getElementById('mapFilterForm').reset();
+    fetchMapData();
+}
+
+// Initial load
+document.addEventListener("DOMContentLoaded", function() {
+    fetchMapData();
+});
+</script>
+
+{% endblock %}

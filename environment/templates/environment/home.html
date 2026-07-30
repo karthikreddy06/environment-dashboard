@@ -1,0 +1,437 @@
+{% extends 'environment/base.html' %}
+{% load static %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- ================= SEARCH ================= -->
+
+<div class="table-box">
+
+    <form method="GET" class="filters">
+
+        <input
+            type="text"
+            name="country"
+            placeholder="🔍 Search Country / Code"
+            value="{{ request.GET.country }}"
+        >
+
+        <input
+            type="number"
+            name="year"
+            placeholder="📅 Status Year"
+            value="{{ request.GET.year }}"
+        >
+
+        <input
+            type="text"
+            name="domain"
+            placeholder="🌊 Marine Realm / Designation"
+            value="{{ request.GET.domain }}"
+        >
+
+        <button type="submit">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            Search
+        </button>
+
+        <a href="{% url 'home' %}" class="clear">
+            Clear
+        </a>
+
+    </form>
+
+</div>
+
+<!-- ================= KPI CARDS ================= -->
+
+<div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+
+    <div class="card gradient-blue">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-database"></i>
+            </div>
+            <span class="trend">WDPA</span>
+        </div>
+        <h4>Total Protected Areas</h4>
+        <h2 class="counter">{{ total_records }}</h2>
+        <p>Marine Protected Areas</p>
+    </div>
+
+    <div class="card gradient-green">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-earth-asia"></i>
+            </div>
+            <span class="trend">Global</span>
+        </div>
+        <h4>Total Countries</h4>
+        <h2 class="counter">{{ total_countries }}</h2>
+        <p>Countries & Territories</p>
+    </div>
+
+    <div class="card gradient-purple">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-award"></i>
+            </div>
+            <span class="trend">Types</span>
+        </div>
+        <h4>Unique Designations</h4>
+        <h2 class="counter">{{ unique_designations }}</h2>
+        <p>Official Designations</p>
+    </div>
+
+    <div class="card gradient-orange">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-building-user"></i>
+            </div>
+            <span class="trend">Auth</span>
+        </div>
+        <h4>Management Authorities</h4>
+        <h2 class="counter">{{ unique_management_authorities }}</h2>
+        <p>Managing Bodies</p>
+    </div>
+
+    <div class="card gradient-blue" style="background: linear-gradient(135deg, #0284c7, #06b6d4);">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-scale-balanced"></i>
+            </div>
+            <span class="trend">Gov</span>
+        </div>
+        <h4>Governance Types</h4>
+        <h2 class="counter">{{ unique_governance_types }}</h2>
+        <p>Governance Models</p>
+    </div>
+
+    <div class="card gradient-purple" style="background: linear-gradient(135deg, #4f46e5, #6366f1);">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-water"></i>
+            </div>
+            <span class="trend">Realms</span>
+        </div>
+        <h4>Marine Realms</h4>
+        <h2 class="counter">{{ total_realms }}</h2>
+        <p>Geographic Realms</p>
+    </div>
+
+    <div class="card gradient-orange" style="background: linear-gradient(135deg, #d97706, #f59e0b);">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-calendar-days"></i>
+            </div>
+            <span class="trend">Latest</span>
+        </div>
+        <h4>Latest Status Year</h4>
+        <h2 class="counter">{{ latest_year }}</h2>
+        <p>Newest Entry Year</p>
+    </div>
+
+    <div class="card gradient-green" style="background: linear-gradient(135deg, #0d9488, #14b8a6);">
+        <div class="card-top">
+            <div class="icon-circle">
+                <i class="fa-solid fa-chart-area"></i>
+            </div>
+            <span class="trend">Avg Size</span>
+        </div>
+        <h4>Avg Area (km²)</h4>
+        <h2 class="counter">{{ avg_area }}</h2>
+        <p>Average GIS Area</p>
+    </div>
+
+</div>
+
+<!-- ================= CHARTS GRID ================= -->
+
+<div class="charts" style="grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+
+    <div class="chart-box">
+        <h3>Top 10 Countries by Protected Areas</h3>
+        <canvas id="topCountriesChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas by Realm</h3>
+        <canvas id="realmChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas by IUCN Category</h3>
+        <canvas id="iucnChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas by Status</h3>
+        <canvas id="statusChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas by Governance Type</h3>
+        <canvas id="govChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Protected Areas Added Per Year</h3>
+        <canvas id="yearChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Top Designation Types</h3>
+        <canvas id="desigChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+        <h3>Average GIS Area by Realm (km²)</h3>
+        <canvas id="avgAreaRealmChart"></canvas>
+    </div>
+
+</div>
+
+<!-- ================= TABLE ================= -->
+
+<div class="table-box">
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h3>Official Marine Protected Areas (WDPA Dataset)</h3>
+        <span style="color:#64748b; font-size:14px;">Showing top 100 entries of {{ total_records }}</span>
+    </div>
+
+    <table>
+
+        <thead>
+
+            <tr>
+                <th>Country</th>
+                <th>Protected Area Name</th>
+                <th>Designation</th>
+                <th>Realm</th>
+                <th>GIS Area (km²)</th>
+                <th>Status Year</th>
+            </tr>
+
+        </thead>
+
+        <tbody>
+
+            {% for item in data %}
+
+            <tr>
+
+                <td>
+                    <strong>{{ item.country|default:item.country_code }}</strong>
+                </td>
+
+                <td>{{ item.protected_area_name|default:"Unnamed Protected Area" }}</td>
+
+                <td>{{ item.designation|default:"Not Reported" }}</td>
+
+                <td>
+                    <span class="badge">
+                        {{ item.realm|default:"Global" }}
+                    </span>
+                </td>
+
+                <td>{{ item.gis_area|default:item.reported_area|default:"N/A" }}</td>
+
+                <td>{{ item.status_year|default:"N/A" }}</td>
+
+            </tr>
+
+            {% empty %}
+
+            <tr>
+
+                <td colspan="6" style="text-align:center;">
+                    No records found matching your filters.
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+        </tbody>
+
+    </table>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+const topCountriesLabels = {{ top_countries_labels|safe }};
+const topCountriesValues = {{ top_countries_values|safe }};
+
+new Chart(document.getElementById("topCountriesChart"), {
+    type: 'bar',
+    data: {
+        labels: topCountriesLabels,
+        datasets: [{
+            label: 'Protected Areas',
+            data: topCountriesValues,
+            backgroundColor: '#2563eb',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+const realmLabels = {{ realm_labels|safe }};
+const realmValues = {{ realm_values|safe }};
+
+new Chart(document.getElementById("realmChart"), {
+    type: 'pie',
+    data: {
+        labels: realmLabels,
+        datasets: [{
+            data: realmValues,
+            backgroundColor: ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4']
+        }]
+    },
+    options: { responsive: true }
+});
+
+const iucnLabels = {{ iucn_labels|safe }};
+const iucnValues = {{ iucn_values|safe }};
+
+new Chart(document.getElementById("iucnChart"), {
+    type: 'doughnut',
+    data: {
+        labels: iucnLabels,
+        datasets: [{
+            data: iucnValues,
+            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1']
+        }]
+    },
+    options: { responsive: true }
+});
+
+const statusLabels = {{ status_labels|safe }};
+const statusValues = {{ status_values|safe }};
+
+new Chart(document.getElementById("statusChart"), {
+    type: 'pie',
+    data: {
+        labels: statusLabels,
+        datasets: [{
+            data: statusValues,
+            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444']
+        }]
+    },
+    options: { responsive: true }
+});
+
+const govLabels = {{ gov_labels|safe }};
+const govValues = {{ gov_values|safe }};
+
+new Chart(document.getElementById("govChart"), {
+    type: 'bar',
+    data: {
+        labels: govLabels,
+        datasets: [{
+            label: 'Governance Types',
+            data: govValues,
+            backgroundColor: '#8b5cf6',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+const yearLabels = {{ year_labels|safe }};
+const yearValues = {{ year_values|safe }};
+
+new Chart(document.getElementById("yearChart"), {
+    type: 'bar',
+    data: {
+        labels: yearLabels,
+        datasets: [{
+            label: 'Protected Areas Added',
+            data: yearValues,
+            backgroundColor: '#059669',
+            borderRadius: 6
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+const desigLabels = {{ desig_labels|safe }};
+const desigValues = {{ desig_values|safe }};
+
+new Chart(document.getElementById("desigChart"), {
+    type: 'bar',
+    data: {
+        labels: desigLabels,
+        datasets: [{
+            label: 'Designation Types',
+            data: desigValues,
+            backgroundColor: '#ea580c',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+const avgAreaRealmLabels = {{ avg_area_realm_labels|safe }};
+const avgAreaRealmValues = {{ avg_area_realm_values|safe }};
+
+new Chart(document.getElementById("avgAreaRealmChart"), {
+    type: 'bar',
+    data: {
+        labels: avgAreaRealmLabels,
+        datasets: [{
+            label: 'Avg GIS Area (km²)',
+            data: avgAreaRealmValues,
+            backgroundColor: '#0284c7',
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } }
+    }
+});
+
+document.querySelectorAll(".counter").forEach(counter => {
+    const text = counter.innerText.replace(/,/g, "");
+    const target = parseFloat(text);
+    if (isNaN(target)) return;
+
+    let count = 0;
+    const isFloat = text.includes(".");
+    const speed = Math.max(0.1, target / 60);
+
+    function update() {
+        if (count < target) {
+            count += speed;
+            if (count > target) count = target;
+            counter.innerText = isFloat ? count.toFixed(2) : Math.floor(count).toLocaleString();
+            requestAnimationFrame(update);
+        }
+    }
+    update();
+});
+</script>
+
+{% endblock %}
