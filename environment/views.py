@@ -1,6 +1,7 @@
 import pandas as pd
 import csv
 import json
+import time
 from datetime import datetime
 from io import BytesIO
 from collections import Counter
@@ -84,22 +85,37 @@ def _summary_statistics(qs):
 
 
 def _get_summary(qs, cache_key):
+    cache_start = time.time()
     result = cache.get(cache_key)
+    cache_duration = time.time() - cache_start
+    print(f"[HOME] cache lookup summary: {cache_duration:.2f}s")
     if result is not None:
         return result
 
+    summary_start = time.time()
     summary = _summary_statistics(qs)
+    summary_duration = time.time() - summary_start
+    print(f"[HOME] summary query: {summary_duration:.2f}s")
+
     summary["latest_year"] = summary.get("latest_year") or 2026
     summary["avg_area"] = round(summary.get("avg_gis_raw") or 0.0, 2)
     cache.set(cache_key, summary, CACHE_TTL_SECONDS)
     return summary
 
 
-def _get_cached_chart_data(cache_key, compute_fn):
+def _get_cached_chart_data(cache_key, compute_fn, chart_name=None):
+    cache_start = time.time()
     data = cache.get(cache_key)
+    cache_duration = time.time() - cache_start
+    chart_label = chart_name or cache_key
+    print(f"[HOME] cache lookup {chart_label}: {cache_duration:.2f}s")
     if data is not None:
         return data
+
+    chart_start = time.time()
     data = compute_fn()
+    chart_duration = time.time() - chart_start
+    print(f"[HOME] chart_{chart_label}: {chart_duration:.2f}s")
     cache.set(cache_key, data, CACHE_TTL_SECONDS)
     return data
 
@@ -114,6 +130,8 @@ from .models import (
 # ======================================================
 
 def home(request):
+    home_start = time.time()
+
     country = request.GET.get("country", "").strip()
     year = request.GET.get("year", "").strip()
     realm = request.GET.get("domain", "").strip() or request.GET.get("realm", "").strip()
@@ -132,6 +150,7 @@ def home(request):
     top20_countries = _get_cached_chart_data(
         f"{cache_prefix}:top20_countries",
         lambda: _top_counts(qs, "country", top_n=20),
+        chart_name="country",
     )
     top20_countries_labels = [c["country"] for c in top20_countries]
     top20_countries_values = [c["total"] for c in top20_countries]
@@ -139,6 +158,7 @@ def home(request):
     top_desig = _get_cached_chart_data(
         f"{cache_prefix}:top_designation",
         lambda: _top_counts(qs, "designation", top_n=10),
+        chart_name="designation",
     )
     top_desig_labels = [d["designation"] for d in top_desig]
     top_desig_values = [d["total"] for d in top_desig]
@@ -146,6 +166,7 @@ def home(request):
     top_gov = _get_cached_chart_data(
         f"{cache_prefix}:top_governance",
         lambda: _top_counts(qs, "governance_type", top_n=10),
+        chart_name="governance",
     )
     top_gov_labels = [g["governance_type"] for g in top_gov]
     top_gov_values = [g["total"] for g in top_gov]
@@ -153,6 +174,7 @@ def home(request):
     top_realms = _get_cached_chart_data(
         f"{cache_prefix}:top_realms",
         lambda: _top_counts(qs, "realm", top_n=10),
+        chart_name="realm",
     )
     top_realms_labels = [r["realm"] for r in top_realms]
     top_realms_values = [r["total"] for r in top_realms]
@@ -160,6 +182,7 @@ def home(request):
     top_iucn = _get_cached_chart_data(
         f"{cache_prefix}:top_iucn",
         lambda: _top_counts(qs, "iucn_category", top_n=10),
+        chart_name="iucn",
     )
     top_iucn_labels = [i["iucn_category"] for i in top_iucn]
     top_iucn_values = [i["total"] for i in top_iucn]
@@ -172,6 +195,7 @@ def home(request):
             .annotate(total=Count("id"))
             .order_by("status_year")
         ),
+        chart_name="year",
     )
     year_labels = [str(y["status_year"]) for y in year_data]
     year_values = [y["total"] for y in year_data]
@@ -179,6 +203,7 @@ def home(request):
     avg_area_realm = _get_cached_chart_data(
         f"{cache_prefix}:average_realm_area",
         lambda: _top_average(qs, "realm", "gis_area", top_n=10),
+        chart_name="average_realm_area",
     )
     avg_area_realm_labels = [r["realm"] for r in avg_area_realm]
     avg_area_realm_values = [round(r["avg_value"], 2) for r in avg_area_realm]
@@ -196,8 +221,10 @@ def home(request):
                 "realm",
             )[:10]
         ),
+        chart_name="largest_pas",
     )
 
+    top_records_start = time.time()
     data = list(
         qs.order_by("-gis_area")
         .values(
@@ -214,7 +241,10 @@ def home(request):
             "management_authority",
         )[:100]
     )
+    top_records_duration = time.time() - top_records_start
+    print(f"[HOME] top_records: {top_records_duration:.2f}s")
 
+    context_start = time.time()
     context = {
         "data": data,
         "total_records": summary["total_records"],
@@ -242,7 +272,16 @@ def home(request):
         "largest_pas": largest_pas,
     }
 
-    return render(request, "environment/home.html", context)
+    context_duration = time.time() - context_start
+    print(f"[HOME] context creation: {context_duration:.2f}s")
+
+    render_start = time.time()
+    response = render(request, "environment/home.html", context)
+    render_duration = time.time() - render_start
+    total_duration = time.time() - home_start
+    print(f"[HOME] render: {render_duration:.2f}s")
+    print(f"[HOME] TOTAL: {total_duration:.2f}s")
+    return response
 
 # ======================================================
 # ======================================================
