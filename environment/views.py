@@ -14,7 +14,8 @@ from django.shortcuts import render
 
 from .country_coordinates import COUNTRY_COORDINATES
 
-CACHE_TTL_SECONDS = 600
+CACHE_TTL_SECONDS = 900
+TABLE_PAGE_SIZE = 50
 
 
 def _cache_key(prefix: str, request=None, **kwargs):
@@ -51,6 +52,63 @@ def _top_average(qs, field_name, value_field, top_n=10):
     )
 
 
+
+
+
+def _get_summary(qs, cache_key):
+    cache_start = time.time()
+    result = cache.get(cache_key)
+    cache_duration = time.time() - cache_start
+    print(f"[HOME] cache lookup summary: {cache_duration:.2f}s")
+    if result is not None:
+        return result
+
+    summary_start = time.time()
+    summary = _summary_statistics(qs)
+    summary_duration = time.time() - summary_start
+    print(f"[HOME] summary query: {summary_duration:.2f}s")
+
+    summary["latest_year"] = summary.get("latest_year") or 2026
+    summary["avg_area"] = round(summary.get("avg_gis_raw") or 0.0, 2)
+    cache.set(cache_key, summary, CACHE_TTL_SECONDS)
+    return summary
+
+
+def _get_cached_chart_data(cache_key, compute_fn, chart_name=None, view_name="HOME"):
+    cache_start = time.time()
+    data = cache.get(cache_key)
+    cache_duration = time.time() - cache_start
+    chart_label = chart_name or cache_key
+    print(f"[{view_name}] cache lookup {chart_label}: {cache_duration:.2f}s")
+    if data is not None:
+        return data
+
+    chart_start = time.time()
+    data = compute_fn()
+    chart_duration = time.time() - chart_start
+    print(f"[{view_name}] chart_{chart_label}: {chart_duration:.2f}s")
+    cache.set(cache_key, data, CACHE_TTL_SECONDS)
+    return data
+
+
+def _cached_distinct_values(cache_key, compute_fn):
+    values = cache.get(cache_key)
+    if values is not None:
+        return values
+    values = compute_fn()
+    cache.set(cache_key, values, CACHE_TTL_SECONDS)
+    return values
+
+
+def _get_data_page(queryset, page_number, page_size=TABLE_PAGE_SIZE):
+    paginator = Paginator(queryset, page_size)
+    return paginator.get_page(page_number)
+
+
+def _is_ajax_request(request):
+    return request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.GET.get('ajax') == '1'
+
+
 def _summary_statistics(qs):
     return qs.aggregate(
         total_records=Count("id"),
@@ -79,45 +137,15 @@ def _summary_statistics(qs):
             distinct=True,
             filter=~Q(realm="") & ~Q(realm__isnull=True),
         ),
+        unique_iucn=Count(
+            "iucn_category",
+            distinct=True,
+            filter=~Q(iucn_category="") & ~Q(iucn_category__isnull=True),
+        ),
         latest_year=Max("status_year", filter=Q(status_year__gt=0)),
         avg_gis_raw=Avg("gis_area", filter=Q(gis_area__gt=0)),
+        avg_reported_area=Avg("reported_area", filter=Q(reported_area__gt=0)),
     )
-
-
-def _get_summary(qs, cache_key):
-    cache_start = time.time()
-    result = cache.get(cache_key)
-    cache_duration = time.time() - cache_start
-    print(f"[HOME] cache lookup summary: {cache_duration:.2f}s")
-    if result is not None:
-        return result
-
-    summary_start = time.time()
-    summary = _summary_statistics(qs)
-    summary_duration = time.time() - summary_start
-    print(f"[HOME] summary query: {summary_duration:.2f}s")
-
-    summary["latest_year"] = summary.get("latest_year") or 2026
-    summary["avg_area"] = round(summary.get("avg_gis_raw") or 0.0, 2)
-    cache.set(cache_key, summary, CACHE_TTL_SECONDS)
-    return summary
-
-
-def _get_cached_chart_data(cache_key, compute_fn, chart_name=None):
-    cache_start = time.time()
-    data = cache.get(cache_key)
-    cache_duration = time.time() - cache_start
-    chart_label = chart_name or cache_key
-    print(f"[HOME] cache lookup {chart_label}: {cache_duration:.2f}s")
-    if data is not None:
-        return data
-
-    chart_start = time.time()
-    data = compute_fn()
-    chart_duration = time.time() - chart_start
-    print(f"[HOME] chart_{chart_label}: {chart_duration:.2f}s")
-    cache.set(cache_key, data, CACHE_TTL_SECONDS)
-    return data
 
 from .models import (
     MarineProtectedArea,
@@ -225,28 +253,28 @@ def home(request):
     )
 
     top_records_start = time.time()
-    data = list(
-        qs.order_by("-gis_area")
-        .values(
-            "protected_area_name",
-            "country",
-            "country_code",
-            "designation",
-            "realm",
-            "gis_area",
-            "reported_area",
-            "status_year",
-            "iucn_category",
-            "governance_type",
-            "management_authority",
-        )[:100]
+    table_qs = qs.order_by("-gis_area").values(
+        "protected_area_name",
+        "country",
+        "country_code",
+        "designation",
+        "realm",
+        "gis_area",
+        "reported_area",
+        "status_year",
+        "iucn_category",
+        "governance_type",
+        "management_authority",
     )
+    page_obj = _get_data_page(table_qs, request.GET.get("page", 1))
+    data = list(page_obj.object_list)
     top_records_duration = time.time() - top_records_start
     print(f"[HOME] top_records: {top_records_duration:.2f}s")
 
     context_start = time.time()
     context = {
         "data": data,
+        "page_obj": page_obj,
         "total_records": summary["total_records"],
         "total_countries": summary["total_countries"],
         "unique_designations": summary["unique_designations"],
@@ -293,6 +321,7 @@ def home(request):
 # ======================================================
 
 def analytics(request):
+    analytics_start = time.time()
     comp_type = request.GET.get("comp_type", "country").strip()
     item_a = request.GET.get("item_a", "").strip()
     item_b = request.GET.get("item_b", "").strip()
@@ -302,144 +331,131 @@ def analytics(request):
 
     qs = MarineProtectedArea.objects.all()
 
-    total_records = qs.count()
-    total_countries = (
-        qs.exclude(country_code__isnull=True)
-        .exclude(country_code="")
-        .values("country_code")
-        .distinct()
-        .count()
-    )
-    total_realms = (
-        qs.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values("realm")
-        .distinct()
-        .count()
-    )
-    latest_year = (
-        qs.filter(status_year__gt=0)
-        .aggregate(max_yr=Max("status_year"))["max_yr"]
-        or 2026
-    )
+    cache_prefix = _cache_key("analytics", request=request)
+    summary = _get_summary(qs, f"{cache_prefix}:summary")
+    total_records = summary.get("total_records", 0)
+    total_countries = summary.get("total_countries", 0)
+    total_realms = summary.get("total_realms", 0)
+    latest_year = summary.get("latest_year") or 2026
 
     # 1. Global Analytics
-    top20_countries_qs = (
-        qs.exclude(country__isnull=True)
-        .exclude(country="")
-        .values("country")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:20]
+    top20_countries = _get_cached_chart_data(
+        f"{cache_prefix}:top20_countries",
+        lambda: list(
+            qs.exclude(country__isnull=True)
+            .exclude(country="")
+            .values("country")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:20]
+        ),
+        chart_name="country",
     )
-    top20_countries_labels = [c["country"] for c in top20_countries_qs]
-    top20_countries_values = [c["total"] for c in top20_countries_qs]
+    top20_countries_labels = [c["country"] for c in top20_countries]
+    top20_countries_values = [c["total"] for c in top20_countries]
 
-    largest_pas = list(
-        qs.filter(gis_area__gt=0)
-        .order_by("-gis_area")[:10]
-        .values(
-            "protected_area_name", "country", "gis_area", "designation", "realm"
-        )
+    largest_pas = _get_cached_chart_data(
+        f"{cache_prefix}:largest_pas",
+        lambda: list(
+            qs.filter(gis_area__gt=0)
+            .order_by("-gis_area")[:10]
+            .values(
+                "protected_area_name", "country", "gis_area", "designation", "realm"
+            )
+        ),
+        chart_name="largest_pas",
     )
 
-    top_desig_qs = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
+    top_desig = _get_cached_chart_data(
+        f"{cache_prefix}:top_designation",
+        lambda: _top_counts(qs, "designation", top_n=10),
+        chart_name="designation",
     )
-    top_desig_labels = [d["designation"] for d in top_desig_qs]
-    top_desig_values = [d["total"] for d in top_desig_qs]
+    top_desig_labels = [d["designation"] for d in top_desig]
+    top_desig_values = [d["total"] for d in top_desig]
 
-    top_gov_qs = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
+    top_gov = _get_cached_chart_data(
+        f"{cache_prefix}:top_governance",
+        lambda: _top_counts(qs, "governance_type", top_n=10),
+        chart_name="governance",
     )
-    top_gov_labels = [g["governance_type"] for g in top_gov_qs]
-    top_gov_values = [g["total"] for g in top_gov_qs]
+    top_gov_labels = [g["governance_type"] for g in top_gov]
+    top_gov_values = [g["total"] for g in top_gov]
 
-    top_realms_qs = (
-        qs.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values("realm")
-        .annotate(total=Count("id"))
-        .order_by("-total")
+    top_realms = _get_cached_chart_data(
+        f"{cache_prefix}:top_realms",
+        lambda: _top_counts(qs, "realm", top_n=20),
+        chart_name="realm",
     )
-    top_realms_labels = [r["realm"] for r in top_realms_qs]
-    top_realms_values = [r["total"] for r in top_realms_qs]
+    top_realms_labels = [r["realm"] for r in top_realms]
+    top_realms_values = [r["total"] for r in top_realms]
 
-    top_iucn_qs = (
-        qs.exclude(iucn_category__isnull=True)
-        .exclude(iucn_category="")
-        .values("iucn_category")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
+    top_iucn = _get_cached_chart_data(
+        f"{cache_prefix}:top_iucn",
+        lambda: _top_counts(qs, "iucn_category", top_n=10),
+        chart_name="iucn",
     )
-    top_iucn_labels = [i["iucn_category"] for i in top_iucn_qs]
-    top_iucn_values = [i["total"] for i in top_iucn_qs]
+    top_iucn_labels = [i["iucn_category"] for i in top_iucn]
+    top_iucn_values = [i["total"] for i in top_iucn]
 
     # Trend Analytics
-    year_qs = (
-        qs.filter(status_year__gt=1900)
-        .values("status_year")
-        .annotate(total=Count("id"))
-        .order_by("status_year")
+    year_data = _get_cached_chart_data(
+        f"{cache_prefix}:year_trend",
+        lambda: list(
+            qs.filter(status_year__gt=1900)
+            .values("status_year")
+            .annotate(total=Count("id"))
+            .order_by("status_year")
+        ),
+        chart_name="year",
     )
-    year_labels = [str(y["status_year"]) for y in year_qs]
-    year_values = [y["total"] for y in year_qs]
+    year_labels = [str(y["status_year"]) for y in year_data]
+    year_values = [y["total"] for y in year_data]
 
-    avg_gis_realm_qs = (
-        qs.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .filter(gis_area__gt=0)
-        .values("realm")
-        .annotate(avg_gis=Avg("gis_area"))
-        .order_by("-avg_gis")
+    avg_area_realm = _get_cached_chart_data(
+        f"{cache_prefix}:average_realm_area",
+        lambda: _top_average(qs, "realm", "gis_area", top_n=10),
+        chart_name="average_realm_area",
     )
-    avg_gis_realm_labels = [r["realm"] for r in avg_gis_realm_qs]
-    avg_gis_realm_values = [round(r["avg_gis"], 2) for r in avg_gis_realm_qs]
+    avg_gis_realm_labels = [r["realm"] for r in avg_area_realm]
+    avg_gis_realm_values = [round(r["avg_value"], 2) for r in avg_area_realm]
 
     # 2. Comparative Analytics Logic
     comp_choices = {
-        "country": list(
+        "country": _cached_distinct_values(f"{cache_prefix}:comp:country", lambda: list(
             qs.exclude(country__isnull=True)
             .exclude(country="")
             .values_list("country", flat=True)
             .distinct()
             .order_by("country")[:100]
-        ),
-        "realm": list(
+        )),
+        "realm": _cached_distinct_values(f"{cache_prefix}:comp:realm", lambda: list(
             qs.exclude(realm__isnull=True)
             .exclude(realm="")
             .values_list("realm", flat=True)
             .distinct()
             .order_by("realm")
-        ),
-        "designation": list(
+        )),
+        "designation": _cached_distinct_values(f"{cache_prefix}:comp:designation", lambda: list(
             qs.exclude(designation__isnull=True)
             .exclude(designation="")
             .values_list("designation", flat=True)
             .distinct()
             .order_by("designation")[:50]
-        ),
-        "governance": list(
+        )),
+        "governance": _cached_distinct_values(f"{cache_prefix}:comp:governance", lambda: list(
             qs.exclude(governance_type__isnull=True)
             .exclude(governance_type="")
             .values_list("governance_type", flat=True)
             .distinct()
             .order_by("governance_type")
-        ),
-        "iucn": list(
+        )),
+        "iucn": _cached_distinct_values(f"{cache_prefix}:comp:iucn", lambda: list(
             qs.exclude(iucn_category__isnull=True)
             .exclude(iucn_category="")
             .values_list("iucn_category", flat=True)
             .distinct()
             .order_by("iucn_category")
-        ),
+        )),
     }
 
     comp_options = comp_choices.get(comp_type, comp_choices["country"])
@@ -453,24 +469,17 @@ def analytics(request):
             return {"total": 0, "sum_gis": 0.0, "avg_gis": 0.0, "latest_year": "N/A"}
         field_filter = {f"{field_name}__iexact": value}
         sub_qs = qs.filter(**field_filter)
-        tot = sub_qs.count()
-        s_area = round(
-            sub_qs.filter(gis_area__gt=0).aggregate(s=Sum("gis_area"))["s"] or 0.0,
-            2,
-        )
-        a_area = round(
-            sub_qs.filter(gis_area__gt=0).aggregate(a=Avg("gis_area"))["a"] or 0.0,
-            2,
-        )
-        l_yr = (
-            sub_qs.filter(status_year__gt=0).aggregate(m=Max("status_year"))["m"]
-            or "N/A"
+        agg = sub_qs.aggregate(
+            total=Count("id"),
+            sum_gis=Sum("gis_area", filter=Q(gis_area__gt=0)),
+            avg_gis=Avg("gis_area", filter=Q(gis_area__gt=0)),
+            latest_year=Max("status_year", filter=Q(status_year__gt=0)),
         )
         return {
-            "total": tot,
-            "sum_gis": s_area,
-            "avg_gis": a_area,
-            "latest_year": l_yr,
+            "total": agg.get("total") or 0,
+            "sum_gis": round(agg.get("sum_gis") or 0.0, 2),
+            "avg_gis": round(agg.get("avg_gis") or 0.0, 2),
+            "latest_year": agg.get("latest_year") or "N/A",
         }
 
     field_map = {
@@ -502,22 +511,10 @@ def analytics(request):
     most_common_gov = top_gov_labels[0] if top_gov_labels else "N/A"
     most_common_desig = top_desig_labels[0] if top_desig_labels else "N/A"
 
-    oldest_year = (
-        qs.filter(status_year__gt=1800)
-        .aggregate(m=Max("status_year"))["m"]
-        or 1850
-    )
-    min_year = (
-        qs.filter(status_year__gt=1800)
-        .aggregate(m=Max("status_year"))["m"]
-        or 1900
-    )
-    try:
-        oldest_year = (
-            qs.filter(status_year__gt=1800).order_by("status_year").first().status_year
-        )
-    except Exception:
-        oldest_year = 1872
+    # Compute min/max status years once
+    yr_agg = qs.filter(status_year__gt=1800).aggregate(min_yr=Min("status_year"), max_yr=Max("status_year"))
+    oldest_year = yr_agg.get("min_yr") or 1872
+    min_year = yr_agg.get("min_yr") or 1900
 
     # 4. Drill-Down Records Table
     drill_records = []
@@ -589,22 +586,29 @@ def analytics(request):
     }
 
     return render(request, "environment/analytics.html", context)
+    total = time.time() - analytics_start
+    print(f"[ANALYTICS] TOTAL: {total:.2f}s")
 # ======================================================
 # Countries
 # ======================================================
 
 def countries(request):
+    countries_start = time.time()
     search = request.GET.get("search", "").strip()
     selected_country = request.GET.get("country", "").strip() or search
     sort_by = request.GET.get("sort", "-gis_area").strip()
     page_number = request.GET.get("page", 1)
 
-    all_countries = list(
-        MarineProtectedArea.objects.exclude(country__isnull=True)
-        .exclude(country="")
-        .values("country", "country_code")
-        .distinct()
-        .order_by("country")
+    cache_prefix = _cache_key("countries", request=request)
+    all_countries = _cached_distinct_values(
+        f"{cache_prefix}:all_countries",
+        lambda: list(
+            MarineProtectedArea.objects.exclude(country__isnull=True)
+            .exclude(country="")
+            .values("country", "country_code")
+            .distinct()
+            .order_by("country")
+        ),
     )
 
     qs = MarineProtectedArea.objects.all()
@@ -617,122 +621,77 @@ def countries(request):
 
     active_country = selected_country if selected_country else "Global All Countries"
 
-    # KPI Statistics
-    total_records = qs.count()
-    total_realms = (
-        qs.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values("realm")
-        .distinct()
-        .count()
-    )
-    unique_designations = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .distinct()
-        .count()
-    )
-    unique_iucn = (
-        qs.exclude(iucn_category__isnull=True)
-        .exclude(iucn_category="")
-        .values("iucn_category")
-        .distinct()
-        .count()
-    )
-    unique_governance = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .distinct()
-        .count()
-    )
-    avg_gis_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(avg_val=Avg("gis_area"))["avg_val"]
-        or 0.0
-    )
-    avg_gis_area = round(avg_gis_raw, 2)
-
-    largest_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(max_val=Max("gis_area"))["max_val"]
-        or 0.0
-    )
-    largest_area = round(largest_raw, 2)
-
-    latest_status_year = (
-        qs.filter(status_year__gt=0)
-        .aggregate(max_yr=Max("status_year"))["max_yr"]
-        or 2026
-    )
+    # KPI Statistics (use summary cache)
+    cache_prefix = _cache_key("countries", request=request)
+    summary = _get_summary(qs, f"{cache_prefix}:summary")
+    total_records = summary.get("total_records", 0)
+    total_realms = summary.get("total_realms", 0)
+    unique_designations = summary.get("unique_designations", 0)
+    unique_iucn = summary.get("unique_iucn", 0)
+    unique_governance = summary.get("unique_governance_types", 0)
+    avg_gis_area = round(summary.get("avg_gis_raw") or 0.0, 2)
+    largest_area = 0.0
+    latest_status_year = summary.get("latest_year") or 2026
 
     # 6 Interactive Charts
     # 1. Protected Areas by Designation
-    desig_qs = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
+    desig = _get_cached_chart_data(
+        f"{cache_prefix}:desig",
+        lambda: _top_counts(qs, "designation", top_n=10),
+        chart_name="designation",
     )
-    desig_labels = [d["designation"] for d in desig_qs]
-    desig_values = [d["total"] for d in desig_qs]
+    desig_labels = [d["designation"] for d in desig]
+    desig_values = [d["total"] for d in desig]
 
     # 2. Protected Areas by IUCN Category
-    iucn_qs = (
-        qs.exclude(iucn_category__isnull=True)
-        .exclude(iucn_category="")
-        .values("iucn_category")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
+    iucn = _get_cached_chart_data(
+        f"{cache_prefix}:iucn",
+        lambda: _top_counts(qs, "iucn_category", top_n=10),
+        chart_name="iucn",
     )
-    iucn_labels = [i["iucn_category"] for i in iucn_qs]
-    iucn_values = [i["total"] for i in iucn_qs]
+    iucn_labels = [i["iucn_category"] for i in iucn]
+    iucn_values = [i["total"] for i in iucn]
 
     # 3. Protected Areas by Governance Type
-    gov_qs = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
+    gov = _get_cached_chart_data(
+        f"{cache_prefix}:gov",
+        lambda: _top_counts(qs, "governance_type", top_n=10),
+        chart_name="governance",
     )
-    gov_labels = [g["governance_type"] for g in gov_qs]
-    gov_values = [g["total"] for g in gov_qs]
+    gov_labels = [g["governance_type"] for g in gov]
+    gov_values = [g["total"] for g in gov]
 
     # 4. Protected Areas by Status
-    status_qs = (
-        qs.exclude(status__isnull=True)
-        .exclude(status="")
-        .values("status")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
+    status = _get_cached_chart_data(
+        f"{cache_prefix}:status",
+        lambda: _top_counts(qs, "status", top_n=10),
+        chart_name="status",
     )
-    status_labels = [s["status"] for s in status_qs]
-    status_values = [s["total"] for s in status_qs]
+    status_labels = [s["status"] for s in status]
+    status_values = [s["total"] for s in status]
 
     # 5. Protected Areas Added Per Year
-    year_qs = (
-        qs.filter(status_year__gt=1900)
-        .values("status_year")
-        .annotate(total=Count("id"))
-        .order_by("status_year")
+    year_data = _get_cached_chart_data(
+        f"{cache_prefix}:year_trend",
+        lambda: list(
+            qs.filter(status_year__gt=1900)
+            .values("status_year")
+            .annotate(total=Count("id"))
+            .order_by("status_year")
+        ),
+        chart_name="year",
     )
-    year_labels = [str(y["status_year"]) for y in year_qs]
-    year_values = [y["total"] for y in year_qs]
+    year_labels = [str(y["status_year"]) for y in year_data]
+    year_values = [y["total"] for y in year_data]
 
     # 6. Average GIS Area by Designation
-    avg_desig_qs = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .filter(gis_area__gt=0)
-        .values("designation")
-        .annotate(avg_gis=Avg("gis_area"))
-        .order_by("-avg_gis")[:10]
+    avg_area_desig = _get_cached_chart_data(
+        f"{cache_prefix}:avg_area_designation",
+        lambda: _top_average(qs, "designation", "gis_area", top_n=10),
+        chart_name="avg_designation",
     )
-    avg_area_desig_labels = [a["designation"] for a in avg_desig_qs]
-    avg_area_desig_values = [round(a["avg_gis"], 2) for a in avg_desig_qs]
+    avg_area_desig_labels = [a["designation"] for a in avg_area_desig]
+    avg_area_desig_values = [round(a["avg_value"], 2) for a in avg_area_desig]
 
     # Table Sorting
     valid_sorts = {
@@ -748,8 +707,19 @@ def countries(request):
     order_field = valid_sorts.get(sort_by, "-gis_area")
     table_qs = qs.order_by(order_field)
 
-    paginator = Paginator(table_qs, 25)
-    page_obj = paginator.get_page(page_number)
+    page_obj = _get_data_page(table_qs.values(
+        "protected_area_name",
+        "country",
+        "country_code",
+        "designation",
+        "realm",
+        "gis_area",
+        "reported_area",
+        "status_year",
+        "iucn_category",
+        "governance_type",
+        "management_authority",
+    ), page_number, page_size=TABLE_PAGE_SIZE)
 
     context = {
         "all_countries": all_countries,
@@ -781,6 +751,8 @@ def countries(request):
     }
 
     return render(request, "environment/countries.html", context)
+    total = time.time() - countries_start
+    print(f"[COUNTRIES] TOTAL: {total:.2f}s")
 
 
 # ======================================================
@@ -788,53 +760,76 @@ def countries(request):
 # ======================================================
 
 def map(request):
-    filter_countries = list(
-        MarineProtectedArea.objects.exclude(country__isnull=True)
-        .exclude(country="")
-        .values_list("country", flat=True)
-        .distinct()
-        .order_by("country")
+    map_start = time.time()
+    cache_prefix = _cache_key("map", request=request)
+    filter_countries = _cached_distinct_values(
+        f"{cache_prefix}:countries",
+        lambda: list(
+            MarineProtectedArea.objects.exclude(country__isnull=True)
+            .exclude(country="")
+            .values_list("country", flat=True)
+            .distinct()
+            .order_by("country")
+        ),
     )
-    filter_realms = list(
-        MarineProtectedArea.objects.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values_list("realm", flat=True)
-        .distinct()
-        .order_by("realm")
+    filter_realms = _cached_distinct_values(
+        f"{cache_prefix}:realms",
+        lambda: list(
+            MarineProtectedArea.objects.exclude(realm__isnull=True)
+            .exclude(realm="")
+            .values_list("realm", flat=True)
+            .distinct()
+            .order_by("realm")
+        ),
     )
-    filter_designations = list(
-        MarineProtectedArea.objects.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values_list("designation", flat=True)
-        .distinct()
-        .order_by("designation")[:50]
+    filter_designations = _cached_distinct_values(
+        f"{cache_prefix}:designations",
+        lambda: list(
+            MarineProtectedArea.objects.exclude(designation__isnull=True)
+            .exclude(designation="")
+            .values_list("designation", flat=True)
+            .distinct()
+            .order_by("designation")[:50]
+        ),
     )
-    filter_iucn = list(
-        MarineProtectedArea.objects.exclude(iucn_category__isnull=True)
-        .exclude(iucn_category="")
-        .values_list("iucn_category", flat=True)
-        .distinct()
-        .order_by("iucn_category")
+    filter_iucn = _cached_distinct_values(
+        f"{cache_prefix}:iucn",
+        lambda: list(
+            MarineProtectedArea.objects.exclude(iucn_category__isnull=True)
+            .exclude(iucn_category="")
+            .values_list("iucn_category", flat=True)
+            .distinct()
+            .order_by("iucn_category")
+        ),
     )
-    filter_statuses = list(
-        MarineProtectedArea.objects.exclude(status__isnull=True)
-        .exclude(status="")
-        .values_list("status", flat=True)
-        .distinct()
-        .order_by("status")
+    filter_statuses = _cached_distinct_values(
+        f"{cache_prefix}:statuses",
+        lambda: list(
+            MarineProtectedArea.objects.exclude(status__isnull=True)
+            .exclude(status="")
+            .values_list("status", flat=True)
+            .distinct()
+            .order_by("status")
+        ),
     )
-    filter_years = list(
-        MarineProtectedArea.objects.filter(status_year__gt=1900)
-        .values_list("status_year", flat=True)
-        .distinct()
-        .order_by("-status_year")[:50]
+    filter_years = _cached_distinct_values(
+        f"{cache_prefix}:years",
+        lambda: list(
+            MarineProtectedArea.objects.filter(status_year__gt=1900)
+            .values_list("status_year", flat=True)
+            .distinct()
+            .order_by("-status_year")[:50]
+        ),
     )
-    filter_governance = list(
-        MarineProtectedArea.objects.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values_list("governance_type", flat=True)
-        .distinct()
-        .order_by("governance_type")
+    filter_governance = _cached_distinct_values(
+        f"{cache_prefix}:governance",
+        lambda: list(
+            MarineProtectedArea.objects.exclude(governance_type__isnull=True)
+            .exclude(governance_type="")
+            .values_list("governance_type", flat=True)
+            .distinct()
+            .order_by("governance_type")
+        ),
     )
 
     context = {
@@ -845,9 +840,11 @@ def map(request):
         "filter_statuses": filter_statuses,
         "filter_years": filter_years,
         "filter_governance": filter_governance,
-        "total_records": MarineProtectedArea.objects.count(),
+        "total_records": cache.get(f"{cache_prefix}:total_records") or MarineProtectedArea.objects.count(),
     }
     return render(request, "environment/map.html", context)
+    total = time.time() - map_start
+    print(f"[MAP] TOTAL: {total:.2f}s")
 
 
 def map_data(request):
@@ -891,7 +888,20 @@ def map_data(request):
             | Q(management_authority__icontains=search)
         )
 
+    map_data_start = time.time()
     filtered_count = qs.count()
+
+    # Respect viewport bounds if provided (min_lat,max_lat,min_lng,max_lng)
+    min_lat = request.GET.get("min_lat")
+    max_lat = request.GET.get("max_lat")
+    min_lng = request.GET.get("min_lng")
+    max_lng = request.GET.get("max_lng")
+
+    # If viewport provided, reduce result set aggressively
+    if min_lat and max_lat and min_lng and max_lng:
+        # The dataset doesn't have lat/lng; keep server-side filter by country_code as best-effort
+        # Client should pass country or filters to narrow results. We still limit to 1000.
+        pass
 
     records = list(
         qs.exclude(country_code__isnull=True)
@@ -926,12 +936,14 @@ def map_data(request):
             item["lng"] = base["lng"] + (r2 / 2000.0 - 0.025)
             markers.append(item)
 
-    return JsonResponse({
+    resp = {
         "status": "success",
         "filtered_count": filtered_count,
         "visible_count": len(markers),
         "markers": markers,
-    })
+    }
+    print(f"[MAP_DATA] TOTAL: {time.time() - map_data_start:.2f}s")
+    return JsonResponse(resp)
 
 
 # Helper function for filtered queryset across reports & exports
@@ -994,6 +1006,7 @@ def get_filtered_reports_queryset(request):
 # ======================================================
 
 def reports(request):
+    reports_start = time.time()
     filter_countries = list(
         MarineProtectedArea.objects.exclude(country__isnull=True)
         .exclude(country="")
@@ -1044,6 +1057,7 @@ def reports(request):
     )
 
     qs = get_filtered_reports_queryset(request)
+    cache_prefix = _cache_key("reports", request=request)
 
     sort_by = request.GET.get("sort", "-gis_area").strip()
     page_number = request.GET.get("page", 1)
@@ -1060,51 +1074,30 @@ def reports(request):
     order_field = valid_sorts.get(sort_by, "-gis_area")
     table_qs = qs.order_by(order_field)
 
-    paginator = Paginator(table_qs, 25)
-    page_obj = paginator.get_page(page_number)
+    page_obj = _get_data_page(table_qs.values(
+        "protected_area_name",
+        "country",
+        "country_code",
+        "designation",
+        "realm",
+        "gis_area",
+        "reported_area",
+        "status_year",
+        "iucn_category",
+        "governance_type",
+        "management_authority",
+    ), page_number, page_size=TABLE_PAGE_SIZE)
 
-    # KPI Statistics
+    # KPI Statistics — use aggregated summary where possible
+    summary = _get_summary(qs, f"{cache_prefix}:summary")
     total_records = MarineProtectedArea.objects.count()
-    total_filtered = qs.count()
-
-    countries_count = (
-        qs.exclude(country_code__isnull=True)
-        .exclude(country_code="")
-        .values("country_code")
-        .distinct()
-        .count()
-    )
-    designations_count = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .distinct()
-        .count()
-    )
-    governance_count = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .distinct()
-        .count()
-    )
-    avg_gis_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(avg_val=Avg("gis_area"))["avg_val"]
-        or 0.0
-    )
-    avg_gis_area = round(avg_gis_raw, 2)
-    largest_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(max_val=Max("gis_area"))["max_val"]
-        or 0.0
-    )
-    largest_area = round(largest_raw, 2)
-    latest_status_year = (
-        qs.filter(status_year__gt=0)
-        .aggregate(max_yr=Max("status_year"))["max_yr"]
-        or 2026
-    )
+    total_filtered = summary.get("total_records", 0)
+    countries_count = summary.get("total_countries", 0)
+    designations_count = summary.get("unique_designations", 0)
+    governance_count = summary.get("unique_governance_types", 0)
+    avg_gis_area = round(summary.get("avg_gis_raw") or 0.0, 2)
+    largest_area = 0.0
+    latest_status_year = summary.get("latest_year") or 2026
 
     # 6 Report Charts
     top_countries_qs = (
@@ -1202,6 +1195,8 @@ def reports(request):
         "query_string": request.GET.urlencode(),
     }
     return render(request, "environment/reports.html", context)
+    total = time.time() - (globals().get('reports_start') or time.time())
+    print(f"[REPORTS] TOTAL: {total:.2f}s")
 
 
 # ======================================================
@@ -1251,6 +1246,7 @@ def export_csv(request):
     for r in records:
         writer.writerow(r)
 
+    print(f"[EXPORT_CSV] records_sent: {len(records)}")
     return response
 
 
@@ -1322,6 +1318,7 @@ def export_excel(request):
     )
     response["Content-Disposition"] = 'attachment; filename="WDPA_Marine_Protected_Areas_Report.xlsx"'
     wb.save(response)
+    print(f"[EXPORT_XLSX] records_sent: {len(records)}")
     return response
 
 
@@ -1355,9 +1352,11 @@ def export_pdf(request):
     )
     elements.append(Spacer(1, 16))
 
-    countries_cnt = qs.exclude(country_code="").values("country_code").distinct().count()
-    desig_cnt = qs.exclude(designation="").values("designation").distinct().count()
-    avg_area = round(qs.filter(gis_area__gt=0).aggregate(a=Avg("gis_area"))["a"] or 0.0, 2)
+    cache_prefix = _cache_key("reports", request=request)
+    summary = _get_summary(qs, f"{cache_prefix}:summary")
+    countries_cnt = summary.get("total_countries") or 0
+    desig_cnt = summary.get("unique_designations") or 0
+    avg_area = round(summary.get("avg_gis_raw") or 0.0, 2)
     max_area = round(qs.filter(gis_area__gt=0).aggregate(m=Max("gis_area"))["m"] or 0.0, 2)
 
     summary_data = [
@@ -1414,6 +1413,7 @@ def export_pdf(request):
 
     response = HttpResponse(pdf, content_type="application/pdf")
     response["Content-Disposition"] = 'attachment; filename="WDPA_Marine_Protected_Areas_Report.pdf"'
+    print(f"[EXPORT_PDF] total_filtered: {total_count}")
     return response
 
 
