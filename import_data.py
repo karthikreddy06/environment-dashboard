@@ -376,7 +376,14 @@ def normalize_country_code(value: Any) -> Optional[str]:
     code = clean_string(value)
     if not code:
         return None
-    return code.upper()
+
+    if isinstance(code, str) and ";" in code:
+        code = code.split(";")[0].strip()
+
+    code = code.upper()
+    if len(code) != 3 or not code.isalpha():
+        return None
+    return code
 
 
 def resolve_country_name(country_code: Optional[str], fallback: Any) -> Optional[str]:
@@ -402,27 +409,79 @@ def resolve_country_name(country_code: Optional[str], fallback: Any) -> Optional
 
 def build_record(row: pd.Series) -> Optional[MarineProtectedArea]:
     """Create a model instance from a cleaned dataframe row."""
-    wdpa_pid = to_int(get_column_value(row, ["wdpa_pid", "WDPA_PID", "site_pid", "SITE_PID", "site_id", "SITE_ID", "wdpaid", "wdpa_id", "wdpa", "id"]))
+    wdpa_pid = to_int(
+        get_column_value(
+            row,
+            [
+                "wdpa_pid",
+                "WDPA_PID",
+                "site_pid",
+                "SITE_PID",
+                "site_id",
+                "SITE_ID",
+                "wdpaid",
+                "wdpa_id",
+                "wdpa",
+                "id",
+            ],
+        )
+    )
     if wdpa_pid is None:
         return None
 
-    country_code = normalize_country_code(get_column_value(row, ["iso3", "ISO3", "prnt_iso3", "PRNT_ISO3", "country_code", "country_iso3", "iso_3"]))
+    raw_country_code = get_column_value(
+        row,
+        ["PRNT_ISO3", "prnt_iso3", "ISO3", "iso3", "country_code"],
+    )
+    country_code = normalize_country_code(raw_country_code)
+
     country_name = resolve_country_name(
         country_code,
-        get_column_value(row, ["country", "country_name", "name_eng", "NAME_ENG", "name", "NAME"]),
+        get_column_value(
+            row,
+            ["country", "country_name", "name_eng", "NAME_ENG", "name", "NAME"],
+        ),
     )
 
-    protected_area_name = clean_string(get_column_value(row, ["name_eng", "NAME_ENG", "name", "NAME", "site_name", "pa_name", "area_name"]))
-    designation = clean_string(get_column_value(row, ["desig_eng", "DESIG_ENG", "desig", "DESIG", "designation", "designation_eng"]))
-    designation_type = clean_string(get_column_value(row, ["desig_type", "DESIG_TYPE", "designation_type"]))
-    iucn_category = clean_string(get_column_value(row, ["iucn_cat", "IUCN_CAT", "iucn_category", "category", "iucn"]))
+    protected_area_name = clean_string(
+        get_column_value(
+            row,
+            ["name_eng", "NAME_ENG", "name", "NAME", "site_name", "pa_name", "area_name"],
+        )
+    )
+    designation = clean_string(
+        get_column_value(
+            row,
+            ["desig_eng", "DESIG_ENG", "desig", "DESIG", "designation", "designation_eng"],
+        )
+    )
+    designation_type = clean_string(
+        get_column_value(row, ["desig_type", "DESIG_TYPE", "designation_type"])
+    )
+    iucn_category = clean_string(
+        get_column_value(row, ["iucn_cat", "IUCN_CAT", "iucn_category", "category", "iucn"])
+    )
     realm = clean_string(get_column_value(row, ["realm", "REALM"]))
-    reported_area = to_float(get_column_value(row, ["rep_m_area", "REP_M_AREA", "rep_area", "REP_AREA", "reported_area", "rep_area_km2", "area_rep"]))
-    gis_area = to_float(get_column_value(row, ["gis_m_area", "GIS_M_AREA", "gis_area", "GIS_AREA", "gis_area_km2", "area_gis", "area_sqkm"]))
+    reported_area = to_float(
+        get_column_value(
+            row,
+            ["rep_m_area", "REP_M_AREA", "rep_area", "REP_AREA", "reported_area"],
+        )
+    )
+    gis_area = to_float(
+        get_column_value(
+            row,
+            ["gis_m_area", "GIS_M_AREA", "gis_area", "GIS_AREA"],
+        )
+    )
     status = clean_string(get_column_value(row, ["status", "STATUS"]))
     status_year = to_int(get_column_value(row, ["status_yr", "STATUS_YR", "status_year", "year"]))
-    governance_type = clean_string(get_column_value(row, ["gov_type", "GOV_TYPE", "governance_type", "governance"]))
-    management_authority = clean_string(get_column_value(row, ["mang_auth", "MANG_AUTH", "management_authority", "management"]))
+    governance_type = clean_string(
+        get_column_value(row, ["gov_type", "GOV_TYPE", "governance_type"])
+    )
+    management_authority = clean_string(
+        get_column_value(row, ["mang_auth", "MANG_AUTH", "management_authority"])
+    )
 
     return MarineProtectedArea(
         wdpa_pid=wdpa_pid,
@@ -569,32 +628,73 @@ def import_data() -> None:
                 failed_rows,
             )
             validate_import_summary()
-    except Exception as exc:  # pragma: no cover - safety for import robustness
+            
+    except Exception as exc:
         logger.exception("Import failed; transaction rolled back: %s", exc)
-        raise
 
 
 def insert_batch(batch: list[MarineProtectedArea]) -> list[MarineProtectedArea]:
-    """Insert a batch of records using bulk_create with conflict handling."""
+    """
+    Insert a batch of records.
+    If bulk insert fails, retry one-by-one and print the exact failing record.
+    """
+
     if not batch:
         return []
 
     try:
-        return MarineProtectedArea.objects.bulk_create(batch, batch_size=5000, ignore_conflicts=True)
-    except IntegrityError as exc:
-        logger.warning("Batch insert hit integrity error; retrying row-by-row: %s", exc)
-    except Exception as exc:  # pragma: no cover - safety for import robustness
-        logger.warning("Batch insert failed; retrying row-by-row: %s", exc)
+        with transaction.atomic():
+            created = MarineProtectedArea.objects.bulk_create(
+                batch,
+                batch_size=1000,
+                ignore_conflicts=True,
+            )
+        return created
 
-    created_objects: list[MarineProtectedArea] = []
+    except Exception as exc:
+        logger.warning("Bulk insert failed: %s", exc)
+
+    created_objects = []
+
     for record in batch:
+
         try:
-            MarineProtectedArea.objects.bulk_create([record], ignore_conflicts=True)
-            created_objects.append(record)
+            with transaction.atomic():
+                record.save()
+                created_objects.append(record)
+
         except IntegrityError:
+            # Duplicate WDPA_PID
             continue
-        except Exception as exc:  # pragma: no cover - safety for import robustness
-            logger.warning("Row insert failed for WDPA %s: %s", record.wdpa_pid, exc)
+
+        except Exception as exc:
+
+            print("\n")
+            print("=" * 100)
+            print("FAILED RECORD")
+            print("=" * 100)
+
+            print(f"WDPA_PID              : {record.wdpa_pid}")
+            print(f"Country Code          : {record.country_code}")
+            print(f"Country               : {record.country}")
+            print(f"Protected Area Name   : {record.protected_area_name}")
+            print(f"Designation           : {record.designation}")
+            print(f"Designation Type      : {record.designation_type}")
+            print(f"IUCN Category         : {record.iucn_category}")
+            print(f"Realm                 : {record.realm}")
+            print(f"Reported Area         : {record.reported_area}")
+            print(f"GIS Area              : {record.gis_area}")
+            print(f"Status                : {record.status}")
+            print(f"Status Year           : {record.status_year}")
+            print(f"Governance Type       : {record.governance_type}")
+            print(f"Management Authority  : {record.management_authority}")
+
+            print("-" * 100)
+            print("DATABASE ERROR:")
+            print(exc)
+            print("=" * 100)
+            print()
+
     return created_objects
 
 

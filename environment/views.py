@@ -3,28 +3,13 @@ import csv
 import json
 from datetime import datetime
 from io import BytesIO
-import json
 from collections import Counter
-import joblib
-import openpyxl
-from openpyxl.styles import Alignment, Font, PatternFill
 
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Max, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
-
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import (
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
 
 from .country_coordinates import COUNTRY_COORDINATES
 from .models import (
@@ -1197,6 +1182,11 @@ def export_csv(request):
 def export_excel(request):
     qs = get_filtered_reports_queryset(request)
 
+    try:
+        import openpyxl
+    except ImportError:
+        raise ImportError("openpyxl is required for export_excel. Install it or disable this feature.")
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "WDPA Report"
@@ -1264,6 +1254,14 @@ def export_pdf(request):
     total_count = qs.count()
 
     buffer = BytesIO()
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError:
+        raise ImportError("reportlab is required for export_pdf. Install it or disable this feature.")
+
     doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
     elements = []
@@ -1365,6 +1363,11 @@ def ai_prediction(request):
     history = Prediction.objects.order_by("-created_at")[:10]
 
     if request.method == "POST":
+
+        try:
+            import joblib
+        except ImportError:
+            raise ImportError("joblib is required for AI prediction. Install it or disable this feature.")
 
         model = joblib.load("environment/ml/model.pkl")
         encoder = joblib.load("environment/ml/encoder.pkl")
