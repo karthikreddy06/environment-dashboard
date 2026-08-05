@@ -9,6 +9,7 @@ from collections import Counter
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Max, Min, Q, Sum
+from django.db import connection
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 
@@ -63,10 +64,17 @@ def _get_summary(qs, cache_key):
     if result is not None:
         return result
 
+    # Measure DB queries performed by the summary aggregation
     summary_start = time.time()
+    before_qs = len(connection.queries)
+    before_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
     summary = _summary_statistics(qs)
+    after_qs = len(connection.queries)
+    after_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
     summary_duration = time.time() - summary_start
-    print(f"[HOME] summary query: {summary_duration:.2f}s")
+    q_count = after_qs - before_qs
+    q_time = after_qtime - before_qtime
+    print(f"[HOME] summary query: {summary_duration:.2f}s (db_queries={q_count} db_time={q_time:.2f}s)")
 
     summary["latest_year"] = summary.get("latest_year") or 2026
     summary["avg_area"] = round(summary.get("avg_gis_raw") or 0.0, 2)
@@ -83,10 +91,23 @@ def _get_cached_chart_data(cache_key, compute_fn, chart_name=None, view_name="HO
     if data is not None:
         return data
 
+    # Profile DB queries executed while computing the chart data
     chart_start = time.time()
+    before_qs = len(connection.queries)
+    before_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
     data = compute_fn()
+    after_qs = len(connection.queries)
+    after_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
     chart_duration = time.time() - chart_start
-    print(f"[{view_name}] chart_{chart_label}: {chart_duration:.2f}s")
+    q_count = after_qs - before_qs
+    q_time = after_qtime - before_qtime
+    print(f"[{view_name}] chart_{chart_label}: {chart_duration:.2f}s (db_queries={q_count} db_time={q_time:.2f}s)")
+    # Optionally print last SQL(s) when slow
+    if q_time > 0.5 and q_count > 0:
+        recent_sql = connection.queries[before_qs:after_qs]
+        for i, q in enumerate(recent_sql[-3:], start=1):
+            sql = q.get('sql')[:2000]
+            print(f"[{view_name}] chart_{chart_label} recent_sql_{i}: {sql}")
     cache.set(cache_key, data, CACHE_TTL_SECONDS)
     return data
 
@@ -253,6 +274,8 @@ def home(request):
     )
 
     top_records_start = time.time()
+    before_qs = len(connection.queries)
+    before_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
     table_qs = qs.order_by("-gis_area").values(
         "protected_area_name",
         "country",
@@ -269,7 +292,11 @@ def home(request):
     page_obj = _get_data_page(table_qs, request.GET.get("page", 1))
     data = list(page_obj.object_list)
     top_records_duration = time.time() - top_records_start
-    print(f"[HOME] top_records: {top_records_duration:.2f}s")
+    after_qs = len(connection.queries)
+    after_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
+    q_count = after_qs - before_qs
+    q_time = after_qtime - before_qtime
+    print(f"[HOME] table query: {top_records_duration:.2f}s (db_queries={q_count} db_time={q_time:.2f}s)")
 
     context_start = time.time()
     context = {
@@ -707,6 +734,8 @@ def countries(request):
     order_field = valid_sorts.get(sort_by, "-gis_area")
     table_qs = qs.order_by(order_field)
 
+    before_qs = len(connection.queries)
+    before_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
     page_obj = _get_data_page(table_qs.values(
         "protected_area_name",
         "country",
@@ -720,6 +749,11 @@ def countries(request):
         "governance_type",
         "management_authority",
     ), page_number, page_size=TABLE_PAGE_SIZE)
+    after_qs = len(connection.queries)
+    after_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
+    q_count = after_qs - before_qs
+    q_time = after_qtime - before_qtime
+    print(f"[COUNTRIES] table query: db_queries={q_count} db_time={q_time:.2f}s")
 
     context = {
         "all_countries": all_countries,
@@ -1074,6 +1108,8 @@ def reports(request):
     order_field = valid_sorts.get(sort_by, "-gis_area")
     table_qs = qs.order_by(order_field)
 
+    before_qs = len(connection.queries)
+    before_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
     page_obj = _get_data_page(table_qs.values(
         "protected_area_name",
         "country",
@@ -1087,6 +1123,11 @@ def reports(request):
         "governance_type",
         "management_authority",
     ), page_number, page_size=TABLE_PAGE_SIZE)
+    after_qs = len(connection.queries)
+    after_qtime = sum(float(q.get("time", 0)) for q in connection.queries)
+    q_count = after_qs - before_qs
+    q_time = after_qtime - before_qtime
+    print(f"[REPORTS] table query: db_queries={q_count} db_time={q_time:.2f}s")
 
     # KPI Statistics — use aggregated summary where possible
     summary = _get_summary(qs, f"{cache_prefix}:summary")
