@@ -9,14 +9,14 @@ class MarineProtectedArea(models.Model):
     protected_area_name = models.CharField(max_length=255, blank=True, null=True)
     designation = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     designation_type = models.CharField(max_length=100, blank=True, null=True)
-    iucn_category = models.CharField(max_length=50, blank=True, null=True)
+    iucn_category = models.CharField(max_length=50, blank=True, null=True, db_index=True)
     realm = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     reported_area = models.FloatField(blank=True, null=True)
     gis_area = models.FloatField(blank=True, null=True)
     status = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     status_year = models.IntegerField(blank=True, null=True, db_index=True)
-    governance_type = models.CharField(max_length=100, blank=True, null=True)
-    management_authority = models.CharField(max_length=255, blank=True, null=True)
+    governance_type = models.CharField(max_length=100, blank=True, null=True, db_index=True)
+    management_authority = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     created_at = models.DateTimeField(default=timezone.now, editable=False)
 
     class Meta:

@@ -7,11 +7,102 @@ from collections import Counter
 
 from django.core.cache import cache
 from django.core.paginator import Paginator
-from django.db.models import Avg, Count, Max, Q, Sum
+from django.db.models import Avg, Count, Max, Min, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 
 from .country_coordinates import COUNTRY_COORDINATES
+
+CACHE_TTL_SECONDS = 600
+
+
+def _cache_key(prefix: str, request=None, **kwargs):
+    if request is not None:
+        query = request.GET.urlencode()
+        if query:
+            return f"{prefix}:{query}"
+    if kwargs:
+        parts = [f"{key}={value or 'all'}" for key, value in kwargs.items()]
+        return f"{prefix}:{'|'.join(parts)}"
+    return prefix
+
+
+def _distinct_choices(qs, field_name, max_items=None, order_field=None):
+    qs = qs.exclude(**{f"{field_name}__isnull": True}).exclude(**{field_name: ""})
+    qs = qs.values_list(field_name, flat=True).distinct().order_by(order_field or field_name)
+    if max_items:
+        qs = qs[:max_items]
+    return list(qs)
+
+
+def _top_counts(qs, field_name, top_n=10):
+    qs = qs.exclude(**{f"{field_name}__isnull": True}).exclude(**{field_name: ""})
+    return list(qs.values(field_name).annotate(total=Count("id")).order_by("-total")[:top_n])
+
+
+def _top_average(qs, field_name, value_field, top_n=10):
+    qs = qs.exclude(**{f"{field_name}__isnull": True}).exclude(**{field_name: ""})
+    return list(
+        qs.filter(**{f"{value_field}__gt": 0})
+        .values(field_name)
+        .annotate(avg_value=Avg(value_field))
+        .order_by("-avg_value")[:top_n]
+    )
+
+
+def _summary_statistics(qs):
+    return qs.aggregate(
+        total_records=Count("id"),
+        total_countries=Count(
+            "country_code",
+            distinct=True,
+            filter=~Q(country_code="") & ~Q(country_code__isnull=True),
+        ),
+        unique_designations=Count(
+            "designation",
+            distinct=True,
+            filter=~Q(designation="") & ~Q(designation__isnull=True),
+        ),
+        unique_management_authorities=Count(
+            "management_authority",
+            distinct=True,
+            filter=~Q(management_authority="") & ~Q(management_authority__isnull=True),
+        ),
+        unique_governance_types=Count(
+            "governance_type",
+            distinct=True,
+            filter=~Q(governance_type="") & ~Q(governance_type__isnull=True),
+        ),
+        total_realms=Count(
+            "realm",
+            distinct=True,
+            filter=~Q(realm="") & ~Q(realm__isnull=True),
+        ),
+        latest_year=Max("status_year", filter=Q(status_year__gt=0)),
+        avg_gis_raw=Avg("gis_area", filter=Q(gis_area__gt=0)),
+    )
+
+
+def _get_summary(qs, cache_key):
+    result = cache.get(cache_key)
+    if result is not None:
+        return result
+
+    summary = _summary_statistics(qs)
+    summary["latest_year"] = summary.get("latest_year") or 2026
+    summary["avg_area"] = round(summary.get("avg_gis_raw") or 0.0, 2)
+    cache.set(cache_key, summary, CACHE_TTL_SECONDS)
+    return summary
+
+
+def _get_cached_chart_data(cache_key, compute_fn):
+    data = cache.get(cache_key)
+    if data is not None:
+        return data
+    data = compute_fn()
+    cache.set(cache_key, data, CACHE_TTL_SECONDS)
+    return data
+
 from .models import (
     MarineProtectedArea,
     Prediction,
@@ -27,184 +118,133 @@ def home(request):
     year = request.GET.get("year", "").strip()
     realm = request.GET.get("domain", "").strip() or request.GET.get("realm", "").strip()
 
-    data = MarineProtectedArea.objects.all()
-
+    qs = MarineProtectedArea.objects.all()
     if country:
-        data = data.filter(Q(country__icontains=country) | Q(country_code__iexact=country))
-
+        qs = qs.filter(Q(country__icontains=country) | Q(country_code__iexact=country))
     if year and year.isdigit():
-        data = data.filter(status_year=int(year))
-
+        qs = qs.filter(status_year=int(year))
     if realm:
-        data = data.filter(Q(realm__icontains=realm) | Q(designation__icontains=realm))
+        qs = qs.filter(Q(realm__icontains=realm) | Q(designation__icontains=realm))
 
-    total_records = data.count()
+    cache_prefix = _cache_key("home", request=request)
+    summary = _get_summary(qs, f"{cache_prefix}:summary")
 
-    total_countries = (
-        data.exclude(country_code__isnull=True)
-        .exclude(country_code="")
-        .values("country_code")
-        .distinct()
-        .count()
+    top20_countries = _get_cached_chart_data(
+        f"{cache_prefix}:top20_countries",
+        lambda: _top_counts(qs, "country", top_n=20),
+    )
+    top20_countries_labels = [c["country"] for c in top20_countries]
+    top20_countries_values = [c["total"] for c in top20_countries]
+
+    top_desig = _get_cached_chart_data(
+        f"{cache_prefix}:top_designation",
+        lambda: _top_counts(qs, "designation", top_n=10),
+    )
+    top_desig_labels = [d["designation"] for d in top_desig]
+    top_desig_values = [d["total"] for d in top_desig]
+
+    top_gov = _get_cached_chart_data(
+        f"{cache_prefix}:top_governance",
+        lambda: _top_counts(qs, "governance_type", top_n=10),
+    )
+    top_gov_labels = [g["governance_type"] for g in top_gov]
+    top_gov_values = [g["total"] for g in top_gov]
+
+    top_realms = _get_cached_chart_data(
+        f"{cache_prefix}:top_realms",
+        lambda: _top_counts(qs, "realm", top_n=10),
+    )
+    top_realms_labels = [r["realm"] for r in top_realms]
+    top_realms_values = [r["total"] for r in top_realms]
+
+    top_iucn = _get_cached_chart_data(
+        f"{cache_prefix}:top_iucn",
+        lambda: _top_counts(qs, "iucn_category", top_n=10),
+    )
+    top_iucn_labels = [i["iucn_category"] for i in top_iucn]
+    top_iucn_values = [i["total"] for i in top_iucn]
+
+    year_data = _get_cached_chart_data(
+        f"{cache_prefix}:year_trend",
+        lambda: list(
+            qs.filter(status_year__gt=1900)
+            .values("status_year")
+            .annotate(total=Count("id"))
+            .order_by("status_year")
+        ),
+    )
+    year_labels = [str(y["status_year"]) for y in year_data]
+    year_values = [y["total"] for y in year_data]
+
+    avg_area_realm = _get_cached_chart_data(
+        f"{cache_prefix}:average_realm_area",
+        lambda: _top_average(qs, "realm", "gis_area", top_n=10),
+    )
+    avg_area_realm_labels = [r["realm"] for r in avg_area_realm]
+    avg_area_realm_values = [round(r["avg_value"], 2) for r in avg_area_realm]
+
+    largest_pas = _get_cached_chart_data(
+        f"{cache_prefix}:largest_pas",
+        lambda: list(
+            qs.filter(gis_area__gt=0)
+            .order_by("-gis_area")
+            .values(
+                "protected_area_name",
+                "country",
+                "gis_area",
+                "designation",
+                "realm",
+            )[:10]
+        ),
     )
 
-    unique_designations = (
-        data.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .distinct()
-        .count()
+    data = list(
+        qs.order_by("-gis_area")
+        .values(
+            "protected_area_name",
+            "country",
+            "country_code",
+            "designation",
+            "realm",
+            "gis_area",
+            "reported_area",
+            "status_year",
+            "iucn_category",
+            "governance_type",
+            "management_authority",
+        )[:100]
     )
-
-    unique_management_authorities = (
-        data.exclude(management_authority__isnull=True)
-        .exclude(management_authority="")
-        .values("management_authority")
-        .distinct()
-        .count()
-    )
-
-    unique_governance_types = (
-        data.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .distinct()
-        .count()
-    )
-
-    total_realms = (
-        data.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values("realm")
-        .distinct()
-        .count()
-    )
-
-    latest_year = (
-        data.filter(status_year__gt=0)
-        .aggregate(max_yr=Max("status_year"))["max_yr"]
-        or 2026
-    )
-
-    avg_gis_raw = (
-        data.filter(gis_area__gt=0)
-        .aggregate(avg_val=Avg("gis_area"))["avg_val"]
-        or 0.0
-    )
-    avg_area = round(avg_gis_raw, 2)
-
-    # Charts
-    top_countries_qs = (
-        data.exclude(country__isnull=True)
-        .exclude(country="")
-        .values("country")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    top_countries_labels = [c["country"] for c in top_countries_qs]
-    top_countries_values = [c["total"] for c in top_countries_qs]
-
-    realm_qs = (
-        data.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values("realm")
-        .annotate(total=Count("id"))
-        .order_by("-total")
-    )
-    realm_labels = [r["realm"] for r in realm_qs]
-    realm_values = [r["total"] for r in realm_qs]
-
-    iucn_qs = (
-        data.exclude(iucn_category__isnull=True)
-        .exclude(iucn_category="")
-        .values("iucn_category")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    iucn_labels = [i["iucn_category"] for i in iucn_qs]
-    iucn_values = [i["total"] for i in iucn_qs]
-
-    status_qs = (
-        data.exclude(status__isnull=True)
-        .exclude(status="")
-        .values("status")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    status_labels = [s["status"] for s in status_qs]
-    status_values = [s["total"] for s in status_qs]
-
-    gov_qs = (
-        data.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    gov_labels = [g["governance_type"] for g in gov_qs]
-    gov_values = [g["total"] for g in gov_qs]
-
-    year_qs = (
-        data.filter(status_year__gt=1900)
-        .values("status_year")
-        .annotate(total=Count("id"))
-        .order_by("status_year")
-    )
-    year_labels = [str(y["status_year"]) for y in year_qs]
-    year_values = [y["total"] for y in year_qs]
-
-    desig_qs = (
-        data.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    desig_labels = [d["designation"] for d in desig_qs]
-    desig_values = [d["total"] for d in desig_qs]
-
-    avg_area_realm_qs = (
-        data.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .filter(gis_area__gt=0)
-        .values("realm")
-        .annotate(avg_gis=Avg("gis_area"))
-        .order_by("-avg_gis")
-    )
-    avg_area_realm_labels = [a["realm"] for a in avg_area_realm_qs]
-    avg_area_realm_values = [round(a["avg_gis"], 2) for a in avg_area_realm_qs]
 
     context = {
-        "data": data[:100],
-        "total_records": total_records,
-        "total_countries": total_countries,
-        "unique_designations": unique_designations,
-        "unique_management_authorities": unique_management_authorities,
-        "unique_governance_types": unique_governance_types,
-        "total_realms": total_realms,
-        "latest_year": latest_year,
-        "avg_area": avg_area,
-        "top_countries_labels": json.dumps(top_countries_labels),
-        "top_countries_values": json.dumps(top_countries_values),
-        "realm_labels": json.dumps(realm_labels),
-        "realm_values": json.dumps(realm_values),
-        "iucn_labels": json.dumps(iucn_labels),
-        "iucn_values": json.dumps(iucn_values),
-        "status_labels": json.dumps(status_labels),
-        "status_values": json.dumps(status_values),
-        "gov_labels": json.dumps(gov_labels),
-        "gov_values": json.dumps(gov_values),
+        "data": data,
+        "total_records": summary["total_records"],
+        "total_countries": summary["total_countries"],
+        "unique_designations": summary["unique_designations"],
+        "unique_management_authorities": summary["unique_management_authorities"],
+        "unique_governance_types": summary["unique_governance_types"],
+        "total_realms": summary["total_realms"],
+        "latest_year": summary["latest_year"],
+        "avg_area": summary["avg_area"],
+        "top20_countries_labels": json.dumps(top20_countries_labels),
+        "top20_countries_values": json.dumps(top20_countries_values),
+        "top_desig_labels": json.dumps(top_desig_labels),
+        "top_desig_values": json.dumps(top_desig_values),
+        "top_gov_labels": json.dumps(top_gov_labels),
+        "top_gov_values": json.dumps(top_gov_values),
+        "top_realms_labels": json.dumps(top_realms_labels),
+        "top_realms_values": json.dumps(top_realms_values),
+        "top_iucn_labels": json.dumps(top_iucn_labels),
+        "top_iucn_values": json.dumps(top_iucn_values),
         "year_labels": json.dumps(year_labels),
         "year_values": json.dumps(year_values),
-        "desig_labels": json.dumps(desig_labels),
-        "desig_values": json.dumps(desig_values),
         "avg_area_realm_labels": json.dumps(avg_area_realm_labels),
         "avg_area_realm_values": json.dumps(avg_area_realm_values),
+        "largest_pas": largest_pas,
     }
 
     return render(request, "environment/home.html", context)
 
-
+# ======================================================
 # ======================================================
 # Analytics
 # ======================================================
@@ -1184,6 +1224,7 @@ def export_excel(request):
 
     try:
         import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
     except ImportError:
         raise ImportError("openpyxl is required for export_excel. Install it or disable this feature.")
 
