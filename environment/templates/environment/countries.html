@@ -11,13 +11,13 @@
 <div class="table-box" style="margin-bottom:25px;">
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <div>
-            <h2 style="margin-bottom:6px;">🌍 {{ active_country }} - WDPA Analytics</h2>
+            <h2 id="countriesActiveCountryTitle" style="margin-bottom:6px;">🌍 {{ active_country }} - WDPA Analytics</h2>
             <p style="color:#64748b;">
                 Detailed marine protected area analytics, designations, governance, and area metrics powered by the official WDPA dataset.
             </p>
         </div>
         <div>
-            <span class="badge" style="font-size:15px; padding:8px 16px; background:#dbeafe; color:#1d4ed8;">
+            <span id="countriesActiveTotal" class="badge" style="font-size:15px; padding:8px 16px; background:#dbeafe; color:#1d4ed8;">
                 {{ total_records }} Protected Areas
             </span>
         </div>
@@ -27,9 +27,9 @@
 <!-- ================= SEARCH & COUNTRY SELECT ================= -->
 
 <div class="table-box" style="margin-bottom:25px;">
-    <form method="GET" class="filters" style="grid-template-columns: 2fr 2fr 1fr auto auto;">
+    <form id="countriesFilterForm" method="GET" class="filters" style="grid-template-columns: 2fr 2fr 1fr auto auto;">
 
-        <select name="country" onchange="this.form.submit()">
+        <select name="country" onchange="submitCountriesForm(event)">
             <option value="">🌐 Select Country / Territory...</option>
             {% for c in all_countries %}
             <option value="{{ c.country }}" {% if selected_country == c.country or search == c.country or search == c.country_code %}selected{% endif %}>
@@ -45,7 +45,7 @@
             value="{{ search }}"
         >
 
-        <select name="sort" onchange="this.form.submit()">
+        <select name="sort" onchange="submitCountriesForm(event)">
             <option value="-area" {% if sort_by == '-area' %}selected{% endif %}>Sort: Area (High to Low)</option>
             <option value="area" {% if sort_by == 'area' %}selected{% endif %}>Sort: Area (Low to High)</option>
             <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Sort: Name (A to Z)</option>
@@ -75,7 +75,7 @@
             <span class="trend">Total</span>
         </div>
         <h4>Total Protected Areas</h4>
-        <h2 class="counter">{{ total_records }}</h2>
+        <h2 id="countriesTotalRecords" class="counter">{{ total_records }}</h2>
         <p>Marine Protected Areas</p>
     </div>
 
@@ -85,7 +85,7 @@
             <span class="trend">Realms</span>
         </div>
         <h4>Marine Realms</h4>
-        <h2 class="counter">{{ total_realms }}</h2>
+        <h2 id="countriesTotalRealms" class="counter">{{ total_realms }}</h2>
         <p>Geographic Realms</p>
     </div>
 
@@ -95,7 +95,7 @@
             <span class="trend">Types</span>
         </div>
         <h4>Designation Types</h4>
-        <h2 class="counter">{{ unique_designations }}</h2>
+        <h2 id="countriesUniqueDesignations" class="counter">{{ unique_designations }}</h2>
         <p>Official Designations</p>
     </div>
 
@@ -105,7 +105,7 @@
             <span class="trend">IUCN</span>
         </div>
         <h4>IUCN Categories</h4>
-        <h2 class="counter">{{ unique_iucn }}</h2>
+        <h2 id="countriesUniqueIUCN" class="counter">{{ unique_iucn }}</h2>
         <p>Conservation Classes</p>
     </div>
 
@@ -115,7 +115,7 @@
             <span class="trend">Gov</span>
         </div>
         <h4>Governance Types</h4>
-        <h2 class="counter">{{ unique_governance }}</h2>
+        <h2 id="countriesUniqueGovernance" class="counter">{{ unique_governance }}</h2>
         <p>Management Types</p>
     </div>
 
@@ -125,7 +125,7 @@
             <span class="trend">Average</span>
         </div>
         <h4>Average GIS Area (km²)</h4>
-        <h2 class="counter">{{ avg_gis_area }}</h2>
+        <h2 id="countriesAvgArea" class="counter">{{ avg_gis_area }}</h2>
         <p>Mean Protected Area Size</p>
     </div>
 
@@ -135,7 +135,7 @@
             <span class="trend">Largest</span>
         </div>
         <h4>Largest Area (km²)</h4>
-        <h2 class="counter">{{ largest_area }}</h2>
+        <h2 id="countriesLargestArea" class="counter">{{ largest_area }}</h2>
         <p>Maximum Single Area</p>
     </div>
 
@@ -145,7 +145,7 @@
             <span class="trend">Latest</span>
         </div>
         <h4>Latest Status Year</h4>
-        <h2 class="counter">{{ latest_status_year }}</h2>
+        <h2 id="countriesLatestYear" class="counter">{{ latest_status_year }}</h2>
         <p>Most Recent Update</p>
     </div>
 
@@ -219,7 +219,7 @@
 
             </thead>
 
-            <tbody>
+            <tbody id="countriesTableBody">
 
                 {% for item in page_obj %}
 
@@ -274,11 +274,11 @@
 
     <!-- Pagination Controls -->
     {% if page_obj.has_other_pages %}
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
+    <div id="countriesPagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
 
         <div>
             {% if page_obj.has_previous %}
-            <a href="?country={{ selected_country }}&search={{ search }}&sort={{ sort_by }}&page={{ page_obj.previous_page_number }}" class="clear" style="padding:8px 16px;">
+            <a href="#" data-page="{{ page_obj.previous_page_number }}" class="ajax-page-link clear" style="padding:8px 16px;">
                 <i class="fa-solid fa-chevron-left"></i> Previous
             </a>
             {% endif %}
@@ -290,7 +290,7 @@
 
         <div>
             {% if page_obj.has_next %}
-            <a href="?country={{ selected_country }}&search={{ search }}&sort={{ sort_by }}&page={{ page_obj.next_page_number }}" class="clear" style="padding:8px 16px;">
+            <a href="#" data-page="{{ page_obj.next_page_number }}" class="ajax-page-link clear" style="padding:8px 16px;">
                 Next <i class="fa-solid fa-chevron-right"></i>
             </a>
             {% endif %}
@@ -436,6 +436,120 @@ document.querySelectorAll(".counter").forEach(counter => {
     }
     update();
 });
+
+function updateCountriesTable(items) {
+    const tbody = document.getElementById("countriesTableBody");
+    tbody.innerHTML = "";
+    if (!items || items.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" style="text-align:center; padding:30px;">
+                    No marine protected areas found for <strong>${document.getElementById("countriesActiveCountryTitle").innerText.split(' - ')[0] || 'Selected Country'}</strong>.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    items.forEach(item => {
+        tbody.insertAdjacentHTML("beforeend", `
+            <tr>
+                <td><strong>${item.protected_area_name || 'Unnamed Protected Area'}</strong></td>
+                <td>${item.designation || 'Not Reported'}</td>
+                <td>${item.designation_type || 'National'}</td>
+                <td><span class="badge" style="background:#e0e7ff; color:#3730a3;">${item.iucn_category || 'Not Reported'}</span></td>
+                <td>${item.realm || 'Marine'}</td>
+                <td><strong>${item.gis_area || 'N/A'}</strong></td>
+                <td>${item.reported_area || 'N/A'}</td>
+                <td><span class="badge" style="background:#dcfce7; color:#15803d;">${item.status_year || 'N/A'}</span></td>
+                <td>${item.status_year || 'N/A'}</td>
+                <td>${item.governance_type || 'Not Reported'}</td>
+                <td>${item.management_authority || 'Not Reported'}</td>
+            </tr>
+        `);
+    });
+}
+
+function updateCountriesPagination(pagination) {
+    const paginationContainer = document.getElementById("countriesPagination");
+    if (!paginationContainer) return;
+
+    const prev = pagination.has_previous ? `
+        <a href="#" data-page="${pagination.previous_page}" class="ajax-page-link clear" style="padding:8px 16px;">
+            <i class="fa-solid fa-chevron-left"></i> Previous
+        </a>
+    ` : "";
+
+    const next = pagination.has_next ? `
+        <a href="#" data-page="${pagination.next_page}" class="ajax-page-link clear" style="padding:8px 16px;">
+            Next <i class="fa-solid fa-chevron-right"></i>
+        </a>
+    ` : "";
+
+    paginationContainer.innerHTML = `
+        <div>${prev}</div>
+        <span style="font-weight:600; color:#475569;">Page ${pagination.page} of ${pagination.num_pages}</span>
+        <div>${next}</div>
+    `;
+    bindCountryPaginationLinks();
+}
+
+function updateCountriesKpis(data) {
+    document.getElementById("countriesTotalRecords").innerText = data.total_records;
+    document.getElementById("countriesTotalRealms").innerText = data.total_realms;
+    document.getElementById("countriesUniqueDesignations").innerText = data.unique_designations;
+    document.getElementById("countriesUniqueIUCN").innerText = data.unique_iucn;
+    document.getElementById("countriesUniqueGovernance").innerText = data.unique_governance;
+    document.getElementById("countriesAvgArea").innerText = data.avg_gis_area;
+    document.getElementById("countriesLargestArea").innerText = data.largest_area;
+    document.getElementById("countriesLatestYear").innerText = data.latest_status_year;
+    document.getElementById("countriesActiveTotal").innerText = `${data.total_records} Protected Areas`;
+    document.getElementById("countriesActiveCountryTitle").innerText = `🌍 ${data.active_country} - WDPA Analytics`;
+}
+
+function bindCountryPaginationLinks() {
+    document.querySelectorAll("#countriesPagination .ajax-page-link").forEach(link => {
+        link.addEventListener("click", function(event) {
+            event.preventDefault();
+            const page = this.dataset.page;
+            fetchCountriesPage(page);
+        });
+    });
+}
+
+function fetchCountriesPage(page) {
+    const params = new URLSearchParams(new FormData(document.getElementById("countriesFilterForm")));
+    params.set("page", page);
+
+    fetch(`/countries/data/?${params.toString()}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success") {
+                updateCountriesTable(data.items);
+                updateCountriesPagination(data.pagination);
+                updateCountriesKpis(data);
+            }
+        })
+        .catch(err => console.error("Countries Data Fetch Error:", err));
+}
+
+function submitCountriesForm(event) {
+    event.preventDefault();
+    fetchCountriesPage(1);
+}
+
+function initCountriesAjax() {
+    const form = document.getElementById("countriesFilterForm");
+    if (!form) return;
+    form.addEventListener("submit", submitCountriesForm);
+    bindCountryPaginationLinks();
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initCountriesAjax);
+} else {
+    initCountriesAjax();
+}
 </script>
 
 {% endblock %}

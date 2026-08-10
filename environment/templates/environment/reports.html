@@ -17,13 +17,13 @@
             </p>
         </div>
         <div style="display:flex; gap:10px;">
-            <a href="{% url 'export_csv' %}?{{ query_string }}" class="report-btn csv-btn" style="padding:10px 18px; background:#10b981; color:white; border-radius:8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:8px;">
+            <a id="exportCsvLink" href="{% url 'export_csv' %}?{{ query_string }}" class="report-btn csv-btn" style="padding:10px 18px; background:#10b981; color:white; border-radius:8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:8px;">
                 <i class="fa-solid fa-file-csv"></i> Download CSV
             </a>
-            <a href="{% url 'export_excel' %}?{{ query_string }}" class="report-btn excel-btn" style="padding:10px 18px; background:#059669; color:white; border-radius:8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:8px;">
+            <a id="exportExcelLink" href="{% url 'export_excel' %}?{{ query_string }}" class="report-btn excel-btn" style="padding:10px 18px; background:#059669; color:white; border-radius:8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:8px;">
                 <i class="fa-solid fa-file-excel"></i> Download Excel
             </a>
-            <a href="{% url 'export_pdf' %}?{{ query_string }}" class="report-btn pdf-btn" style="padding:10px 18px; background:#ef4444; color:white; border-radius:8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:8px;">
+            <a id="exportPdfLink" href="{% url 'export_pdf' %}?{{ query_string }}" class="report-btn pdf-btn" style="padding:10px 18px; background:#ef4444; color:white; border-radius:8px; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:8px;">
                 <i class="fa-solid fa-file-pdf"></i> Download PDF
             </a>
         </div>
@@ -34,7 +34,7 @@
 
 <div class="table-box" style="margin-bottom:25px;">
     <h3 style="margin-bottom:15px;">🔍 Report Filter Controls</h3>
-    <form method="GET" class="filters" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+    <form id="reportsFilterForm" method="GET" class="filters" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
 
         <select name="country">
             <option value="">🌐 All Countries...</option>
@@ -112,7 +112,7 @@
             <span class="trend">Filtered</span>
         </div>
         <h4>Filtered Records</h4>
-        <h2 class="counter">{{ total_filtered }}</h2>
+        <h2 id="reportsFilteredCount" class="counter">{{ total_filtered }}</h2>
         <p>Matching Protected Areas</p>
     </div>
 
@@ -122,7 +122,7 @@
             <span class="trend">Nations</span>
         </div>
         <h4>Countries Included</h4>
-        <h2 class="counter">{{ countries_count }}</h2>
+        <h2 id="reportsCountriesCount" class="counter">{{ countries_count }}</h2>
         <p>Nations Covered</p>
     </div>
 
@@ -132,7 +132,7 @@
             <span class="trend">Designations</span>
         </div>
         <h4>Unique Designations</h4>
-        <h2 class="counter">{{ designations_count }}</h2>
+        <h2 id="reportsDesignationsCount" class="counter">{{ designations_count }}</h2>
         <p>Official Designation Types</p>
     </div>
 
@@ -142,7 +142,7 @@
             <span class="trend">Gov</span>
         </div>
         <h4>Governance Types</h4>
-        <h2 class="counter">{{ governance_count }}</h2>
+        <h2 id="reportsGovernanceCount" class="counter">{{ governance_count }}</h2>
         <p>Management Types</p>
     </div>
 
@@ -152,7 +152,7 @@
             <span class="trend">Average</span>
         </div>
         <h4>Average GIS Area (km²)</h4>
-        <h2 class="counter">{{ avg_gis_area }}</h2>
+        <h2 id="reportsAvgArea" class="counter">{{ avg_gis_area }}</h2>
         <p>Mean Size</p>
     </div>
 
@@ -162,7 +162,7 @@
             <span class="trend">Largest</span>
         </div>
         <h4>Largest Protected Area</h4>
-        <h2 class="counter">{{ largest_area }}</h2>
+        <h2 id="reportsLargestArea" class="counter">{{ largest_area }}</h2>
         <p>Max GIS Area (km²)</p>
     </div>
 
@@ -172,7 +172,7 @@
             <span class="trend">Latest</span>
         </div>
         <h4>Latest Status Year</h4>
-        <h2 class="counter">{{ latest_status_year }}</h2>
+        <h2 id="reportsLatestYear" class="counter">{{ latest_status_year }}</h2>
         <p>Most Recent Record</p>
     </div>
 
@@ -256,7 +256,7 @@
                 </tr>
             </thead>
 
-            <tbody>
+            <tbody id="reportsTableBody">
                 {% for item in page_obj %}
                 <tr>
                     <td><strong>{{ item.protected_area_name|default:"Unnamed Protected Area" }}</strong></td>
@@ -287,10 +287,10 @@
 
     <!-- Pagination Controls -->
     {% if page_obj.has_other_pages %}
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
+    <div id="reportsPagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
         <div>
             {% if page_obj.has_previous %}
-            <a href="?{{ query_string }}&page={{ page_obj.previous_page_number }}" class="clear" style="padding:8px 16px;">
+            <a href="#" data-page="{{ page_obj.previous_page_number }}" class="ajax-page-link clear" style="padding:8px 16px;">
                 <i class="fa-solid fa-chevron-left"></i> Previous
             </a>
             {% endif %}
@@ -302,7 +302,7 @@
 
         <div>
             {% if page_obj.has_next %}
-            <a href="?{{ query_string }}&page={{ page_obj.next_page_number }}" class="clear" style="padding:8px 16px;">
+            <a href="#" data-page="{{ page_obj.next_page_number }}" class="ajax-page-link clear" style="padding:8px 16px;">
                 Next <i class="fa-solid fa-chevron-right"></i>
             </a>
             {% endif %}
@@ -437,6 +437,125 @@ document.querySelectorAll(".counter").forEach(counter => {
     }
     update();
 });
+
+function updateReportsTable(items) {
+    const tbody = document.getElementById("reportsTableBody");
+    tbody.innerHTML = "";
+    if (!items || items.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="13" style="text-align:center; padding:30px;">
+                    No marine protected areas match the selected filters.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    items.forEach(item => {
+        tbody.insertAdjacentHTML("beforeend", `
+            <tr>
+                <td><strong>${item.protected_area_name || 'Unnamed Protected Area'}</strong></td>
+                <td>${item.country || 'N/A'}</td>
+                <td><span class="badge" style="background:#f1f5f9; color:#475569;">${item.country_code || 'N/A'}</span></td>
+                <td>${item.designation || 'Not Reported'}</td>
+                <td>${item.designation_type || 'National'}</td>
+                <td><span class="badge" style="background:#e0e7ff; color:#3730a3;">${item.iucn_category || 'Not Reported'}</span></td>
+                <td>${item.realm || 'Marine'}</td>
+                <td><strong>${item.gis_area || 'N/A'}</strong></td>
+                <td>${item.reported_area || 'N/A'}</td>
+                <td><span class="badge" style="background:#dcfce7; color:#15803d;">${item.status || 'Designated'}</span></td>
+                <td>${item.status_year || 'N/A'}</td>
+                <td>${item.governance_type || 'Not Reported'}</td>
+                <td>${item.management_authority || 'Not Reported'}</td>
+            </tr>
+        `);
+    });
+}
+
+function updateReportsPagination(pagination, queryString) {
+    const paginationContainer = document.getElementById("reportsPagination");
+    if (!paginationContainer) return;
+
+    const prev = pagination.has_previous ? `
+        <a href="#" data-page="${pagination.previous_page}" class="ajax-page-link clear" style="padding:8px 16px;">
+            <i class="fa-solid fa-chevron-left"></i> Previous
+        </a>
+    ` : "";
+
+    const next = pagination.has_next ? `
+        <a href="#" data-page="${pagination.next_page}" class="ajax-page-link clear" style="padding:8px 16px;">
+            Next <i class="fa-solid fa-chevron-right"></i>
+        </a>
+    ` : "";
+
+    paginationContainer.innerHTML = `
+        <div>${prev}</div>
+        <span style="font-weight:600; color:#475569;">Page ${pagination.page} of ${pagination.num_pages}</span>
+        <div>${next}</div>
+    `;
+    bindReportPaginationLinks();
+}
+
+function updateReportsKpis(data) {
+    document.getElementById("reportsFilteredCount").innerText = data.total_filtered;
+    document.getElementById("reportsCountriesCount").innerText = data.countries_count;
+    document.getElementById("reportsDesignationsCount").innerText = data.designations_count;
+    document.getElementById("reportsGovernanceCount").innerText = data.governance_count;
+    document.getElementById("reportsAvgArea").innerText = data.avg_gis_area;
+    document.getElementById("reportsLargestArea").innerText = data.largest_area;
+    document.getElementById("reportsLatestYear").innerText = data.latest_status_year;
+
+    const qs = new URLSearchParams(window.reportsFormQuery || {});
+    document.getElementById("exportCsvLink").href = `/export_csv/?${qs.toString()}`;
+    document.getElementById("exportExcelLink").href = `/export_excel/?${qs.toString()}`;
+    document.getElementById("exportPdfLink").href = `/export_pdf/?${qs.toString()}`;
+}
+
+function bindReportPaginationLinks() {
+    document.querySelectorAll("#reportsPagination .ajax-page-link").forEach(link => {
+        link.addEventListener("click", function(event) {
+            event.preventDefault();
+            const page = this.dataset.page;
+            fetchReportsPage(page);
+        });
+    });
+}
+
+function fetchReportsPage(page) {
+    const params = new URLSearchParams(new FormData(document.getElementById("reportsFilterForm")));
+    params.set("page", page);
+    window.reportsFormQuery = Object.fromEntries(params.entries());
+
+    fetch(`/reports/data/?${params.toString()}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success") {
+                updateReportsTable(data.items);
+                updateReportsPagination(data.pagination, params.toString());
+                updateReportsKpis(data);
+            }
+        })
+        .catch(err => console.error("Reports Data Fetch Error:", err));
+}
+
+function submitReportsForm(event) {
+    event.preventDefault();
+    fetchReportsPage(1);
+}
+
+function initReportsAjax() {
+    const form = document.getElementById("reportsFilterForm");
+    if (!form) return;
+    form.addEventListener("submit", submitReportsForm);
+    bindReportPaginationLinks();
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initReportsAjax);
+} else {
+    initReportsAjax();
+}
 </script>
 
 {% endblock %}
