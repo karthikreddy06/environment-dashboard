@@ -31,6 +31,14 @@ from .models import (
     MarineProtectedArea,
     Prediction,
     EnvironmentalData,
+    DashboardSummary,
+    CountrySummary,
+    RealmSummary,
+    DesignationSummary,
+    GovernanceSummary,
+    StatusSummary,
+    YearSummary,
+    IUCNSummary,
 )
 
 # ---- Caching helpers ----
@@ -60,6 +68,127 @@ def home(request):
     year = request.GET.get("year", "").strip()
     realm = request.GET.get("domain", "").strip() or request.GET.get("realm", "").strip()
 
+    # If no filters, use precomputed summary tables for fast response
+    if not (country or year or realm):
+        # Global KPIs from DashboardSummary (singleton id=1)
+        dash = DashboardSummary.objects.filter(id=1).first()
+        if dash:
+            total_records = dash.total_records
+            total_countries = dash.total_countries
+            unique_designations = dash.total_designations
+            unique_management_authorities = dash.total_governance_types  # proxy
+            unique_governance_types = dash.total_governance_types
+            total_realms = dash.total_realms
+            latest_year = dash.latest_year or 2026
+            avg_area = 0.0  # not stored in summary; keep 0
+        else:
+            # fallback to live aggregation (should not happen)
+            total_records = MarineProtectedArea.objects.count()
+            total_countries = (
+                MarineProtectedArea.objects.exclude(country_code__isnull=True)
+                .exclude(country_code="")
+                .values("country_code")
+                .distinct()
+                .count()
+            )
+            unique_designations = (
+                MarineProtectedArea.objects.exclude(designation__isnull=True)
+                .exclude(designation="")
+                .values("designation")
+                .distinct()
+                .count()
+            )
+            unique_management_authorities = (
+                MarineProtectedArea.objects.exclude(management_authority__isnull=True)
+                .exclude(management_authority="")
+                .values("management_authority")
+                .distinct()
+                .count()
+            )
+            unique_governance_types = (
+                MarineProtectedArea.objects.exclude(governance_type__isnull=True)
+                .exclude(governance_type="")
+                .values("governance_type")
+                .distinct()
+                .count()
+            )
+            total_realms = (
+                MarineProtectedArea.objects.exclude(realm__isnull=True)
+                .exclude(realm="")
+                .values("realm")
+                .distinct()
+                .count()
+            )
+            latest_year = (
+                MarineProtectedArea.objects.filter(status_year__gt=0)
+                .aggregate(max_yr=Max("status_year"))["max_yr"]
+                or 2026
+            )
+            avg_area = 0.0
+
+        # Charts from summary tables
+        top_countries_qs = CountrySummary.objects.order_by("-record_count")[:10]
+        top_countries_labels = [c.country for c in top_countries_qs]
+        top_countries_values = [c.record_count for c in top_countries_qs]
+
+        realm_qs = RealmSummary.objects.order_by("-record_count")
+        realm_labels = [r.realm for r in realm_qs]
+        realm_values = [r.record_count for r in realm_qs]
+
+        iucn_qs = IUCNSummary.objects.order_by("-record_count")[:10]
+        iucn_labels = [i.iucn_category for i in iucn_qs]
+        iucn_values = [i.record_count for i in iucn_qs]
+
+        status_qs = StatusSummary.objects.order_by("-record_count")[:10]
+        status_labels = [s.status for s in status_qs]
+        status_values = [s.record_count for s in status_qs]
+
+        gov_qs = GovernanceSummary.objects.order_by("-record_count")[:10]
+        gov_labels = [g.governance_type for g in gov_qs]
+        gov_values = [g.record_count for g in gov_qs]
+
+        year_qs = YearSummary.objects.order_by("year")
+        year_labels = [str(y.year) for y in year_qs]
+        year_values = [y.record_count for y in year_qs]
+
+        desig_qs = DesignationSummary.objects.order_by("-record_count")[:10]
+        desig_labels = [d.designation for d in desig_qs]
+        desig_values = [d.record_count for d in desig_qs]
+
+        # avg_area_realm not precomputed; leave empty
+        avg_area_realm_labels = []
+        avg_area_realm_values = []
+
+        context = {
+            "data": MarineProtectedArea.objects.all()[:100],
+            "total_records": total_records,
+            "total_countries": total_countries,
+            "unique_designations": unique_designations,
+            "unique_management_authorities": unique_management_authorities,
+            "unique_governance_types": unique_governance_types,
+            "total_realms": total_realms,
+            "latest_year": latest_year,
+            "avg_area": avg_area,
+            "top_countries_labels": json.dumps(top_countries_labels),
+            "top_countries_values": json.dumps(top_countries_values),
+            "realm_labels": json.dumps(realm_labels),
+            "realm_values": json.dumps(realm_values),
+            "iucn_labels": json.dumps(iucn_labels),
+            "iucn_values": json.dumps(iucn_values),
+            "status_labels": json.dumps(status_labels),
+            "status_values": json.dumps(status_values),
+            "gov_labels": json.dumps(gov_labels),
+            "gov_values": json.dumps(gov_values),
+            "year_labels": json.dumps(year_labels),
+            "year_values": json.dumps(year_values),
+            "desig_labels": json.dumps(desig_labels),
+            "desig_values": json.dumps(desig_values),
+            "avg_area_realm_labels": json.dumps(avg_area_realm_labels),
+            "avg_area_realm_values": json.dumps(avg_area_realm_values),
+        }
+        return render(request, "environment/home.html", context)
+
+    # Filters present: fall back to live queries (original logic)
     data = MarineProtectedArea.objects.all()
 
     if country:
@@ -126,7 +255,7 @@ def home(request):
     )
     avg_area = round(avg_gis_raw, 2)
 
-    # Charts
+    # Charts (filtered)
     top_countries_qs = (
         data.exclude(country__isnull=True)
         .exclude(country="")
@@ -254,6 +383,187 @@ def analytics(request):
     drill_type = request.GET.get("drill_type", "").strip()
     drill_val = request.GET.get("drill_val", "").strip()
 
+    # If no comparative items and no drill, serve fast global analytics from summary tables
+    if not (item_a or item_b or drill_type or drill_val):
+        dash = DashboardSummary.objects.filter(id=1).first()
+        if dash:
+            total_records = dash.total_records
+            total_countries = dash.total_countries
+            total_realms = dash.total_realms
+            latest_year = dash.latest_year or 2026
+        else:
+            total_records = MarineProtectedArea.objects.count()
+            total_countries = (
+                MarineProtectedArea.objects.exclude(country_code__isnull=True)
+                .exclude(country_code="")
+                .values("country_code")
+                .distinct()
+                .count()
+            )
+            total_realms = (
+                MarineProtectedArea.objects.exclude(realm__isnull=True)
+                .exclude(realm="")
+                .values("realm")
+                .distinct()
+                .count()
+            )
+            latest_year = (
+                MarineProtectedArea.objects.filter(status_year__gt=0)
+                .aggregate(max_yr=Max("status_year"))["max_yr"]
+                or 2026
+            )
+
+        # Global charts from summary tables
+        top20_countries_qs = CountrySummary.objects.order_by("-record_count")[:20]
+        top20_countries_labels = [c.country for c in top20_countries_qs]
+        top20_countries_values = [c.record_count for c in top20_countries_qs]
+
+        # Largest PAs still need live query (not in summary)
+        largest_pas = list(
+            MarineProtectedArea.objects.filter(gis_area__gt=0)
+            .order_by("-gis_area")[:10]
+            .values(
+                "protected_area_name", "country", "gis_area", "designation", "realm"
+            )
+        )
+
+        top_desig_qs = DesignationSummary.objects.order_by("-record_count")[:10]
+        top_desig_labels = [d.designation for d in top_desig_qs]
+        top_desig_values = [d.record_count for d in top_desig_qs]
+
+        top_gov_qs = GovernanceSummary.objects.order_by("-record_count")[:10]
+        top_gov_labels = [g.governance_type for g in top_gov_qs]
+        top_gov_values = [g.record_count for g in top_gov_qs]
+
+        top_realms_qs = RealmSummary.objects.order_by("-record_count")
+        top_realms_labels = [r.realm for r in top_realms_qs]
+        top_realms_values = [r.record_count for r in top_realms_qs]
+
+        top_iucn_qs = IUCNSummary.objects.order_by("-record_count")[:10]
+        top_iucn_labels = [i.iucn_category for i in top_iucn_qs]
+        top_iucn_values = [i.record_count for i in top_iucn_qs]
+
+        year_qs = YearSummary.objects.order_by("year")
+        year_labels = [str(y.year) for y in year_qs]
+        year_values = [y.record_count for y in year_qs]
+
+        # avg_gis_realm not precomputed; leave empty
+        avg_gis_realm_labels = []
+        avg_gis_realm_values = []
+
+        # Comparative options (use distinct values from summary tables)
+        comp_choices = {
+            "country": list(CountrySummary.objects.values_list("country", flat=True).order_by("country")[:100]),
+            "realm": list(RealmSummary.objects.values_list("realm", flat=True).order_by("realm")),
+            "designation": list(DesignationSummary.objects.values_list("designation", flat=True).order_by("designation")[:50]),
+            "governance": list(GovernanceSummary.objects.values_list("governance_type", flat=True).order_by("governance_type")),
+            "iucn": list(IUCNSummary.objects.values_list("iucn_category", flat=True).order_by("iucn_category")),
+        }
+
+        comp_options = comp_choices.get(comp_type, comp_choices["country"])
+        if not item_a and comp_options:
+            item_a = comp_options[0]
+        if not item_b and len(comp_options) > 1:
+            item_b = comp_options[1]
+
+        # Stats for comparative items (still need live query for area sums)
+        def get_comp_stats(field_name, value):
+            if not value:
+                return {"total": 0, "sum_gis": 0.0, "avg_gis": 0.0, "latest_year": "N/A"}
+            field_filter = {f"{field_name}__iexact": value}
+            sub_qs = MarineProtectedArea.objects.filter(**field_filter)
+            tot = sub_qs.count()
+            s_area = round(
+                sub_qs.filter(gis_area__gt=0).aggregate(s=Sum("gis_area"))["s"] or 0.0,
+                2,
+            )
+            a_area = round(
+                sub_qs.filter(gis_area__gt=0).aggregate(a=Avg("gis_area"))["a"] or 0.0,
+                2,
+            )
+            l_yr = (
+                sub_qs.filter(status_year__gt=0).aggregate(m=Max("status_year"))["m"]
+                or "N/A"
+            )
+            return {
+                "total": tot,
+                "sum_gis": s_area,
+                "avg_gis": a_area,
+                "latest_year": l_yr,
+            }
+
+        field_map = {
+            "country": "country",
+            "realm": "realm",
+            "designation": "designation",
+            "governance": "governance_type",
+            "iucn": "iucn_category",
+        }
+        target_field = field_map.get(comp_type, "country")
+        stats_a = get_comp_stats(target_field, item_a)
+        stats_b = get_comp_stats(target_field, item_b)
+
+        # Insights Panel
+        top_country_name = top20_countries_labels[0] if top20_countries_labels else "N/A"
+        top_country_count = top20_countries_values[0] if top20_countries_values else 0
+
+        largest_realm_name = "N/A"
+        largest_realm_avg = 0.0
+
+        most_common_gov = top_gov_labels[0] if top_gov_labels else "N/A"
+        most_common_desig = top_desig_labels[0] if top_desig_labels else "N/A"
+
+        oldest_year = 1872  # default
+
+        context = {
+            "total_records": total_records,
+            "total_countries": total_countries,
+            "total_realms": total_realms,
+            "latest_year": latest_year,
+
+            # Global Charts
+            "top20_countries_labels": json.dumps(top20_countries_labels),
+            "top20_countries_values": json.dumps(top20_countries_values),
+            "top_desig_labels": json.dumps(top_desig_labels),
+            "top_desig_values": json.dumps(top_desig_values),
+            "top_gov_labels": json.dumps(top_gov_labels),
+            "top_gov_values": json.dumps(top_gov_values),
+            "top_realms_labels": json.dumps(top_realms_labels),
+            "top_realms_values": json.dumps(top_realms_values),
+            "top_iucn_labels": json.dumps(top_iucn_labels),
+            "top_iucn_values": json.dumps(top_iucn_values),
+            "year_labels": json.dumps(year_labels),
+            "year_values": json.dumps(year_values),
+            "avg_gis_realm_labels": json.dumps(avg_gis_realm_labels),
+            "avg_gis_realm_values": json.dumps(avg_gis_realm_values),
+            "largest_pas": largest_pas,
+
+            # Comparative Analytics
+            "comp_type": comp_type,
+            "comp_options": comp_options,
+            "item_a": item_a,
+            "item_b": item_b,
+            "stats_a": stats_a,
+            "stats_b": stats_b,
+
+            # Insights Panel
+            "top_country_name": top_country_name,
+            "top_country_count": top_country_count,
+            "largest_realm_name": largest_realm_name,
+            "largest_realm_avg": largest_realm_avg,
+            "most_common_gov": most_common_gov,
+            "most_common_desig": most_common_desig,
+            "oldest_year": oldest_year,
+
+            # Drill Down
+            "drill_type": drill_type,
+            "drill_val": drill_val,
+            "drill_records": [],
+        }
+
+        return render(request, "environment/analytics.html", context)
+
+    # ----- Filtered / comparative / drill-down path (original logic) -----
     qs = MarineProtectedArea.objects.all()
 
     total_records = qs.count()
@@ -561,146 +871,217 @@ def countries(request):
         .order_by("country")
     )
 
-    qs = MarineProtectedArea.objects.all()
+    # If no specific country selected, use summary tables for KPIs and charts
+    if not selected_country:
+        dash = DashboardSummary.objects.filter(id=1).first()
+        if dash:
+            total_records = dash.total_records
+            total_realms = dash.total_realms
+            unique_designations = dash.total_designations
+            unique_iucn = dash.total_iucn_categories
+            unique_governance = dash.total_governance_types
+            avg_gis_area = 0.0
+            largest_area = 0.0
+            latest_status_year = dash.latest_year or 2026
+        else:
+            total_records = MarineProtectedArea.objects.count()
+            total_realms = (
+                MarineProtectedArea.objects.exclude(realm__isnull=True)
+                .exclude(realm="")
+                .values("realm")
+                .distinct()
+                .count()
+            )
+            unique_designations = (
+                MarineProtectedArea.objects.exclude(designation__isnull=True)
+                .exclude(designation="")
+                .values("designation")
+                .distinct()
+                .count()
+            )
+            unique_iucn = (
+                MarineProtectedArea.objects.exclude(iucn_category__isnull=True)
+                .exclude(iucn_category="")
+                .values("iucn_category")
+                .distinct()
+                .count()
+            )
+            unique_governance = (
+                MarineProtectedArea.objects.exclude(governance_type__isnull=True)
+                .exclude(governance_type="")
+                .values("governance_type")
+                .distinct()
+                .count()
+            )
+            avg_gis_area = 0.0
+            largest_area = 0.0
+            latest_status_year = (
+                MarineProtectedArea.objects.filter(status_year__gt=0)
+                .aggregate(max_yr=Max("status_year"))["max_yr"]
+                or 2026
+            )
 
-    if selected_country:
+        # Charts from summary tables
+        desig_qs = DesignationSummary.objects.order_by("-record_count")[:10]
+        desig_labels = [d.designation for d in desig_qs]
+        desig_values = [d.record_count for d in desig_qs]
+
+        iucn_qs = IUCNSummary.objects.order_by("-record_count")[:10]
+        iucn_labels = [i.iucn_category for i in iucn_qs]
+        iucn_values = [i.record_count for i in iucn_qs]
+
+        gov_qs = GovernanceSummary.objects.order_by("-record_count")[:10]
+        gov_labels = [g.governance_type for g in gov_qs]
+        gov_values = [g.record_count for g in gov_qs]
+
+        status_qs = StatusSummary.objects.order_by("-record_count")[:10]
+        status_labels = [s.status for s in status_qs]
+        status_values = [s.record_count for s in status_qs]
+
+        year_qs = YearSummary.objects.order_by("year")
+        year_labels = [str(y.year) for y in year_qs]
+        year_values = [y.record_count for y in year_qs]
+
+        avg_area_desig_labels = []
+        avg_area_desig_values = []
+
+        qs = MarineProtectedArea.objects.none()  # no table rows needed
+        active_country = "Global All Countries"
+        table_qs = MarineProtectedArea.objects.none()
+    else:
+        # Filtered by country: use live queries (original logic)
+        qs = MarineProtectedArea.objects.all()
         qs = qs.filter(
             Q(country__icontains=selected_country)
             | Q(country_code__iexact=selected_country)
         )
 
-    active_country = selected_country if selected_country else "Global All Countries"
+        active_country = selected_country
 
-    # KPI Statistics
-    total_records = qs.count()
-    total_realms = (
-        qs.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values("realm")
-        .distinct()
-        .count()
-    )
-    unique_designations = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .distinct()
-        .count()
-    )
-    unique_iucn = (
-        qs.exclude(iucn_category__isnull=True)
-        .exclude(iucn_category="")
-        .values("iucn_category")
-        .distinct()
-        .count()
-    )
-    unique_governance = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .distinct()
-        .count()
-    )
-    avg_gis_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(avg_val=Avg("gis_area"))["avg_val"]
-        or 0.0
-    )
-    avg_gis_area = round(avg_gis_raw, 2)
+        # KPI Statistics
+        total_records = qs.count()
+        total_realms = (
+            qs.exclude(realm__isnull=True)
+            .exclude(realm="")
+            .values("realm")
+            .distinct()
+            .count()
+        )
+        unique_designations = (
+            qs.exclude(designation__isnull=True)
+            .exclude(designation="")
+            .values("designation")
+            .distinct()
+            .count()
+        )
+        unique_iucn = (
+            qs.exclude(iucn_category__isnull=True)
+            .exclude(iucn_category="")
+            .values("iucn_category")
+            .distinct()
+            .count()
+        )
+        unique_governance = (
+            qs.exclude(governance_type__isnull=True)
+            .exclude(governance_type="")
+            .values("governance_type")
+            .distinct()
+            .count()
+        )
+        avg_gis_raw = (
+            qs.filter(gis_area__gt=0)
+            .aggregate(avg_val=Avg("gis_area"))["avg_val"]
+            or 0.0
+        )
+        avg_gis_area = round(avg_gis_raw, 2)
 
-    largest_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(max_val=Max("gis_area"))["max_val"]
-        or 0.0
-    )
-    largest_area = round(largest_raw, 2)
+        largest_raw = (
+            qs.filter(gis_area__gt=0)
+            .aggregate(max_val=Max("gis_area"))["max_val"]
+            or 0.0
+        )
+        largest_area = round(largest_raw, 2)
 
-    latest_status_year = (
-        qs.filter(status_year__gt=0)
-        .aggregate(max_yr=Max("status_year"))["max_yr"]
-        or 2026
-    )
+        latest_status_year = (
+            qs.filter(status_year__gt=0)
+            .aggregate(max_yr=Max("status_year"))["max_yr"]
+            or 2026
+        )
 
-    # 6 Interactive Charts
-    # 1. Protected Areas by Designation
-    desig_qs = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    desig_labels = [d["designation"] for d in desig_qs]
-    desig_values = [d["total"] for d in desig_qs]
+        # 6 Interactive Charts (filtered)
+        desig_qs = (
+            qs.exclude(designation__isnull=True)
+            .exclude(designation="")
+            .values("designation")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        desig_labels = [d["designation"] for d in desig_qs]
+        desig_values = [d["total"] for d in desig_qs]
 
-    # 2. Protected Areas by IUCN Category
-    iucn_qs = (
-        qs.exclude(iucn_category__isnull=True)
-        .exclude(iucn_category="")
-        .values("iucn_category")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    iucn_labels = [i["iucn_category"] for i in iucn_qs]
-    iucn_values = [i["total"] for i in iucn_qs]
+        iucn_qs = (
+            qs.exclude(iucn_category__isnull=True)
+            .exclude(iucn_category="")
+            .values("iucn_category")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        iucn_labels = [i["iucn_category"] for i in iucn_qs]
+        iucn_values = [i["total"] for i in iucn_qs]
 
-    # 3. Protected Areas by Governance Type
-    gov_qs = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    gov_labels = [g["governance_type"] for g in gov_qs]
-    gov_values = [g["total"] for g in gov_qs]
+        gov_qs = (
+            qs.exclude(governance_type__isnull=True)
+            .exclude(governance_type="")
+            .values("governance_type")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        gov_labels = [g["governance_type"] for g in gov_qs]
+        gov_values = [g["total"] for g in gov_qs]
 
-    # 4. Protected Areas by Status
-    status_qs = (
-        qs.exclude(status__isnull=True)
-        .exclude(status="")
-        .values("status")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    status_labels = [s["status"] for s in status_qs]
-    status_values = [s["total"] for s in status_qs]
+        status_qs = (
+            qs.exclude(status__isnull=True)
+            .exclude(status="")
+            .values("status")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        status_labels = [s["status"] for s in status_qs]
+        status_values = [s["total"] for s in status_qs]
 
-    # 5. Protected Areas Added Per Year
-    year_qs = (
-        qs.filter(status_year__gt=1900)
-        .values("status_year")
-        .annotate(total=Count("id"))
-        .order_by("status_year")
-    )
-    year_labels = [str(y["status_year"]) for y in year_qs]
-    year_values = [y["total"] for y in year_qs]
+        year_qs = (
+            qs.filter(status_year__gt=1900)
+            .values("status_year")
+            .annotate(total=Count("id"))
+            .order_by("status_year")
+        )
+        year_labels = [str(y["status_year"]) for y in year_qs]
+        year_values = [y["total"] for y in year_qs]
 
-    # 6. Average GIS Area by Designation
-    avg_desig_qs = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .filter(gis_area__gt=0)
-        .values("designation")
-        .annotate(avg_gis=Avg("gis_area"))
-        .order_by("-avg_gis")[:10]
-    )
-    avg_area_desig_labels = [a["designation"] for a in avg_desig_qs]
-    avg_area_desig_values = [round(a["avg_gis"], 2) for a in avg_desig_qs]
+        avg_desig_qs = (
+            qs.exclude(designation__isnull=True)
+            .exclude(designation="")
+            .filter(gis_area__gt=0)
+            .values("designation")
+            .annotate(avg_gis=Avg("gis_area"))
+            .order_by("-avg_gis")[:10]
+        )
+        avg_area_desig_labels = [a["designation"] for a in avg_desig_qs]
+        avg_area_desig_values = [round(a["avg_gis"], 2) for a in avg_desig_qs]
 
-    # Table Sorting
-    valid_sorts = {
-        "name": "protected_area_name",
-        "-name": "-protected_area_name",
-        "area": "gis_area",
-        "-area": "-gis_area",
-        "year": "status_year",
-        "-year": "-status_year",
-        "designation": "designation",
-        "-designation": "-designation",
-    }
-    order_field = valid_sorts.get(sort_by, "-gis_area")
-    table_qs = qs.order_by(order_field)
+        # Table Sorting
+        valid_sorts = {
+            "name": "protected_area_name",
+            "-name": "-protected_area_name",
+            "area": "gis_area",
+            "-area": "-gis_area",
+            "year": "status_year",
+            "-year": "-status_year",
+            "designation": "designation",
+            "-designation": "-designation",
+        }
+        order_field = valid_sorts.get(sort_by, "-gis_area")
+        table_qs = qs.order_by(order_field)
 
     paginator = Paginator(table_qs, 25)
     page_obj = paginator.get_page(page_number)
@@ -1017,108 +1398,192 @@ def reports(request):
     paginator = Paginator(table_qs, 25)
     page_obj = paginator.get_page(page_number)
 
-    # KPI Statistics
-    total_records = MarineProtectedArea.objects.count()
-    total_filtered = qs.count()
+    # Determine if any filter applied
+    any_filter = any([
+        request.GET.get("country", "").strip(),
+        request.GET.get("country_code", "").strip(),
+        request.GET.get("realm", "").strip(),
+        request.GET.get("designation", "").strip(),
+        request.GET.get("designation_type", "").strip(),
+        request.GET.get("iucn", "").strip(),
+        request.GET.get("governance", "").strip(),
+        request.GET.get("status", "").strip(),
+        request.GET.get("year", "").strip(),
+        request.GET.get("min_area", "").strip(),
+        request.GET.get("max_area", "").strip(),
+        request.GET.get("search", "").strip(),
+    ])
 
-    countries_count = (
-        qs.exclude(country_code__isnull=True)
-        .exclude(country_code="")
-        .values("country_code")
-        .distinct()
-        .count()
-    )
-    designations_count = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .distinct()
-        .count()
-    )
-    governance_count = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .distinct()
-        .count()
-    )
-    avg_gis_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(avg_val=Avg("gis_area"))["avg_val"]
-        or 0.0
-    )
-    avg_gis_area = round(avg_gis_raw, 2)
-    largest_raw = (
-        qs.filter(gis_area__gt=0)
-        .aggregate(max_val=Max("gis_area"))["max_val"]
-        or 0.0
-    )
-    largest_area = round(largest_raw, 2)
-    latest_status_year = (
-        qs.filter(status_year__gt=0)
-        .aggregate(max_yr=Max("status_year"))["max_yr"]
-        or 2026
-    )
+    if not any_filter:
+        # Use summary tables for KPIs and charts
+        dash = DashboardSummary.objects.filter(id=1).first()
+        if dash:
+            total_records = dash.total_records
+            countries_count = dash.total_countries
+            designations_count = dash.total_designations
+            governance_count = dash.total_governance_types
+            avg_gis_area = 0.0
+            largest_area = 0.0
+            latest_status_year = dash.latest_year or 2026
+        else:
+            total_records = MarineProtectedArea.objects.count()
+            countries_count = (
+                MarineProtectedArea.objects.exclude(country_code__isnull=True)
+                .exclude(country_code="")
+                .values("country_code")
+                .distinct()
+                .count()
+            )
+            designations_count = (
+                MarineProtectedArea.objects.exclude(designation__isnull=True)
+                .exclude(designation="")
+                .values("designation")
+                .distinct()
+                .count()
+            )
+            governance_count = (
+                MarineProtectedArea.objects.exclude(governance_type__isnull=True)
+                .exclude(governance_type="")
+                .values("governance_type")
+                .distinct()
+                .count()
+            )
+            avg_gis_area = 0.0
+            largest_area = 0.0
+            latest_status_year = (
+                MarineProtectedArea.objects.filter(status_year__gt=0)
+                .aggregate(max_yr=Max("status_year"))["max_yr"]
+                or 2026
+            )
+        total_filtered = total_records
 
-    # 6 Report Charts
-    top_countries_qs = (
-        qs.exclude(country__isnull=True)
-        .exclude(country="")
-        .values("country")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    top_countries_labels = [c["country"] for c in top_countries_qs]
-    top_countries_values = [c["total"] for c in top_countries_qs]
+        # Charts from summary tables
+        top_countries_qs = CountrySummary.objects.order_by("-record_count")[:10]
+        top_countries_labels = [c.country for c in top_countries_qs]
+        top_countries_values = [c.record_count for c in top_countries_qs]
 
-    desig_qs = (
-        qs.exclude(designation__isnull=True)
-        .exclude(designation="")
-        .values("designation")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    desig_labels = [d["designation"] for d in desig_qs]
-    desig_values = [d["total"] for d in desig_qs]
+        desig_qs = DesignationSummary.objects.order_by("-record_count")[:10]
+        desig_labels = [d.designation for d in desig_qs]
+        desig_values = [d.record_count for d in desig_qs]
 
-    realm_qs = (
-        qs.exclude(realm__isnull=True)
-        .exclude(realm="")
-        .values("realm")
-        .annotate(total=Count("id"))
-        .order_by("-total")
-    )
-    realm_labels = [r["realm"] for r in realm_qs]
-    realm_values = [r["total"] for r in realm_qs]
+        realm_qs = RealmSummary.objects.order_by("-record_count")
+        realm_labels = [r.realm for r in realm_qs]
+        realm_values = [r.record_count for r in realm_qs]
 
-    gov_qs = (
-        qs.exclude(governance_type__isnull=True)
-        .exclude(governance_type="")
-        .values("governance_type")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    gov_labels = [g["governance_type"] for g in gov_qs]
-    gov_values = [g["total"] for g in gov_qs]
+        gov_qs = GovernanceSummary.objects.order_by("-record_count")[:10]
+        gov_labels = [g.governance_type for g in gov_qs]
+        gov_values = [g.record_count for g in gov_qs]
 
-    status_qs = (
-        qs.exclude(status__isnull=True)
-        .exclude(status="")
-        .values("status")
-        .annotate(total=Count("id"))
-        .order_by("-total")[:10]
-    )
-    status_labels = [s["status"] for s in status_qs]
-    status_values = [s["total"] for s in status_qs]
+        status_qs = StatusSummary.objects.order_by("-record_count")[:10]
+        status_labels = [s.status for s in status_qs]
+        status_values = [s.record_count for s in status_qs]
 
-    year_qs = (
-        qs.filter(status_year__gt=1900)
-        .values("status_year")
-        .annotate(total=Count("id"))
-        .order_by("status_year")
-    )
-    year_labels = [str(y["status_year"]) for y in year_qs]
-    year_values = [y["total"] for y in year_qs]
+        year_qs = YearSummary.objects.order_by("year")
+        year_labels = [str(y.year) for y in year_qs]
+        year_values = [y.record_count for y in year_qs]
+    else:
+        # Filtered: live queries (original logic)
+        total_records = MarineProtectedArea.objects.count()
+        total_filtered = qs.count()
+
+        countries_count = (
+            qs.exclude(country_code__isnull=True)
+            .exclude(country_code="")
+            .values("country_code")
+            .distinct()
+            .count()
+        )
+        designations_count = (
+            qs.exclude(designation__isnull=True)
+            .exclude(designation="")
+            .values("designation")
+            .distinct()
+            .count()
+        )
+        governance_count = (
+            qs.exclude(governance_type__isnull=True)
+            .exclude(governance_type="")
+            .values("governance_type")
+            .distinct()
+            .count()
+        )
+        avg_gis_raw = (
+            qs.filter(gis_area__gt=0)
+            .aggregate(avg_val=Avg("gis_area"))["avg_val"]
+            or 0.0
+        )
+        avg_gis_area = round(avg_gis_raw, 2)
+        largest_raw = (
+            qs.filter(gis_area__gt=0)
+            .aggregate(max_val=Max("gis_area"))["max_val"]
+            or 0.0
+        )
+        largest_area = round(largest_raw, 2)
+        latest_status_year = (
+            qs.filter(status_year__gt=0)
+            .aggregate(max_yr=Max("status_year"))["max_yr"]
+            or 2026
+        )
+
+        # 6 Report Charts (filtered)
+        top_countries_qs = (
+            qs.exclude(country__isnull=True)
+            .exclude(country="")
+            .values("country")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        top_countries_labels = [c["country"] for c in top_countries_qs]
+        top_countries_values = [c["total"] for c in top_countries_qs]
+
+        desig_qs = (
+            qs.exclude(designation__isnull=True)
+            .exclude(designation="")
+            .values("designation")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        desig_labels = [d["designation"] for d in desig_qs]
+        desig_values = [d["total"] for d in desig_qs]
+
+        realm_qs = (
+            qs.exclude(realm__isnull=True)
+            .exclude(realm="")
+            .values("realm")
+            .annotate(total=Count("id"))
+            .order_by("-total")
+        )
+        realm_labels = [r["realm"] for r in realm_qs]
+        realm_values = [r["total"] for r in realm_qs]
+
+        gov_qs = (
+            qs.exclude(governance_type__isnull=True)
+            .exclude(governance_type="")
+            .values("governance_type")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        gov_labels = [g["governance_type"] for g in gov_qs]
+        gov_values = [g["total"] for g in gov_qs]
+
+        status_qs = (
+            qs.exclude(status__isnull=True)
+            .exclude(status="")
+            .values("status")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:10]
+        )
+        status_labels = [s["status"] for s in status_qs]
+        status_values = [s["total"] for s in status_qs]
+
+        year_qs = (
+            qs.filter(status_year__gt=1900)
+            .values("status_year")
+            .annotate(total=Count("id"))
+            .order_by("status_year")
+        )
+        year_labels = [str(y["status_year"]) for y in year_qs]
+        year_values = [y["total"] for y in year_qs]
 
     context = {
         "filter_countries": filter_countries,

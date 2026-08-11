@@ -58,3 +58,115 @@ class EnvironmentalData(models.Model):
 
     def __str__(self) -> str:
         return f"{self.country} ({self.year})"
+
+
+class DashboardSummary(models.Model):
+    id = models.IntegerField(primary_key=True, default=1, editable=False)
+    total_records = models.BigIntegerField(default=0)
+    total_countries = models.BigIntegerField(default=0)
+    total_designations = models.BigIntegerField(default=0)
+    total_realms = models.BigIntegerField(default=0)
+    total_governance_types = models.BigIntegerField(default=0)
+    total_iucn_categories = models.BigIntegerField(default=0)
+    latest_year = models.IntegerField(blank=True, null=True)
+    earliest_year = models.IntegerField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Dashboard Summary"
+        verbose_name_plural = "Dashboard Summaries"
+
+    def __str__(self) -> str:
+        return "Dashboard Summary"
+
+
+class CountrySummary(models.Model):
+    country_code = models.CharField(max_length=3, unique=True, db_index=True)
+    country = models.CharField(max_length=150)
+    record_count = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["country_code"]
+        verbose_name = "Country Summary"
+        verbose_name_plural = "Country Summaries"
+
+    def __str__(self) -> str:
+        return f"{self.country_code} - {self.record_count}"
+
+
+class RealmSummary(models.Model):
+    realm = models.CharField(max_length=100, unique=True, db_index=True)
+    record_count = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["realm"]
+        verbose_name = "Realm Summary"
+        verbose_name_plural = "Realm Summaries"
+
+    def __str__(self) -> str:
+        return f"{self.realm} - {self.record_count}"
+
+
+class DesignationSummary(models.Model):
+    designation = models.CharField(max_length=255, unique=True, db_index=True)
+    record_count = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["designation"]
+        verbose_name = "Designation Summary"
+        verbose_name_plural = "Designation Summaries"
+
+    def __str__(self) -> str:
+        return f"{self.designation} - {self.record_count}"
+
+
+class GovernanceSummary(models.Model):
+    governance_type = models.CharField(max_length=100, unique=True, db_index=True)
+    record_count = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["governance_type"]
+        verbose_name = "Governance Summary"
+        verbose_name_plural = "Governance Summaries"
+
+    def __str__(self) -> str:
+        return f"{self.governance_type} - {self.record_count}"
+
+
+class StatusSummary(models.Model):
+    status = models.CharField(max_length=100, unique=True, db_index=True)
+    record_count = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["status"]
+        verbose_name = "Status Summary"
+        verbose_name_plural = "Status Summaries"
+
+    def __str__(self) -> str:
+        return f"{self.status} - {self.record_count}"
+
+
+class YearSummary(models.Model):
+    year = models.IntegerField(unique=True, db_index=True)
+    record_count = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["year"]
+        verbose_name = "Year Summary"
+        verbose_name_plural = "Year Summaries"
+
+    def __str__(self) -> str:
+        return f"{self.year} - {self.record_count}"
+
+
+class IUCNSummary(models.Model):
+    iucn_category = models.CharField(max_length=50, unique=True, db_index=True)
+    record_count = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["iucn_category"]
+        verbose_name = "IUCN Summary"
+        verbose_name_plural = "IUCN Summaries"
+
+    def __str__(self) -> str:
+        return f"{self.iucn_category} - {self.record_count}"
